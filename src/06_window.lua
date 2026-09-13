@@ -1,0 +1,872 @@
+--[[
+    Window — creates the main window and every layer that sits inside it.
+
+    Structure:
+      Gui (ScreenGui)
+       ├─ Main (glass panel)
+       │   ├─ BackgroundImage (ImageLabel)
+       │   ├─ Header (title, gear, minimize, close)
+       │   ├─ Separator
+       │   ├─ TabStrip (empty — populated by 08_tab.lua)
+       │   ├─ Content (empty — populated by 08_tab.lua)
+       │   ├─ SettingsPanel (CanvasGroup — populated by 07_settings.lua)
+       │   └─ ResizeHandle (bottom-right)
+       └─ FloatingPill (minimize-to-pill)
+]]
+
+-- ============================================================
+-- Class table
+-- ============================================================
+LucidUI.Window = {}
+LucidUI.Window.__index = LucidUI.Window
+
+-- ============================================================
+-- CreateWindow
+-- ============================================================
+function LucidUI:CreateWindow(config)
+    config = config or {}
+
+    local W = setmetatable({}, LucidUI.Window)
+
+    -- Basic state
+    W.Name              = config.Name or "LucidUI"
+    W.Theme             = LucidUI.Themes[config.Theme or "Default"] or LucidUI.Themes.Default
+    W.ThemeName         = config.Theme or "Default"
+
+    W.Tabs              = {}
+    W.ActiveTab         = nil
+
+    W.Visible           = true
+    W.Minimized         = false
+    W.Floating          = false
+    W.SettingsOpen      = false
+
+    -- Data stores
+    W._configData       = {}
+    W._elementsByFlag   = {}
+    W._themeElements    = {}
+    W._conns            = {}
+    W._accentOverride   = nil
+
+    -- Size constraints
+    W._minWidth,  W._minHeight = 320, 240
+    W._maxWidth,  W._maxHeight = 1200, 900
+
+    -- Theme state
+    W._customTheme      = nil
+    W._customThemeActive = false
+    W._currentConfig    = "default"
+    W._backgroundUrl    = nil
+
+    -- Size
+    W._width  = config.Width  or 620
+    W._height = config.Height or 460
+    W._fullSize     = UDim2.fromOffset(W._width, W._height)
+    W._collapsedSize = UDim2.fromOffset(W._width, 44)
+
+    LucidUI._lastTheme = W.Theme
+    Compat.ensureFolders()
+
+    -- ========================================================
+    -- Root GUI
+    -- ========================================================
+    W.Gui = Create("ScreenGui", {
+        Name = "LucidUI_" .. W.Name,
+        ResetOnSpawn = false,
+        ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+        IgnoreGuiInset = true,
+        DisplayOrder = 100,
+        Enabled = false,
+        Parent = PlayerGui,
+    })
+
+    W.UIScale = Create("UIScale", {
+        Scale = GetResponsiveScale(),
+        Parent = W.Gui,
+    })
+
+    table.insert(W._conns, Camera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
+        if W.UIScale and W.UIScale.Parent then
+            W.UIScale.Scale = GetResponsiveScale()
+        end
+        pcall(function() ClampPosition(W.Main) end)
+        pcall(function() ClampPosition(W.FloatingPill) end)
+    end))
+
+    -- ========================================================
+    -- Main panel
+    -- ========================================================
+    W.Main = Create("Frame", {
+        Name = "Main",
+        Size = W._fullSize,
+        Position = UDim2.new(0.5, 0, 0.5, 0),
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Visible = false,
+        Parent = W.Gui,
+    })
+    ApplyGlass(W.Main, W.Theme, { cornerRadius = 18 })
+
+    -- Background image layer (behind everything else)
+    W._bgImage = Create("ImageLabel", {
+        Name = "BackgroundImage",
+        Size = UDim2.fromScale(1, 1),
+        BackgroundTransparency = 1,
+        Image = "",
+        ImageTransparency = 1,
+        ScaleType = Enum.ScaleType.Crop,
+        ZIndex = 0,
+        Visible = false,
+        Parent = W.Main,
+    })
+    Corner(18, W._bgImage)
+
+    -- ========================================================
+    -- Header
+    -- ========================================================
+    W.Header = Create("Frame", {
+        Size = UDim2.new(1, 0, 0, 44),
+        BackgroundTransparency = 1,
+        ZIndex = 3,
+        Parent = W.Main,
+    })
+
+    W.TitleLabel = Create("TextLabel", {
+        Text = W.Name,
+        Font = Enum.Font.GothamBold,
+        TextSize = 16,
+        TextColor3 = W.Theme.TextPrimary,
+        BackgroundTransparency = 1,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Position = UDim2.fromOffset(18, 0),
+        Size = UDim2.new(1, -170, 1, 0),
+        ZIndex = 3,
+        Parent = W.Header,
+    })
+
+    -- --------------------------------------------------------
+    -- Gear (settings) button
+    -- --------------------------------------------------------
+    local settingsBtn = Create("TextButton", {
+        Text = "",
+        BackgroundTransparency = 1,
+        Size = UDim2.fromOffset(36, 36),
+        Position = UDim2.new(1, -120, 0.5, -18),
+        ZIndex = 3,
+        Parent = W.Header,
+    })
+
+    local gearHolder, gearRing, gearParts, gearHole =
+        BuildGearIcon(settingsBtn, 18, W.Theme.TextSecondary, W.Theme.Background)
+    gearHolder.Position = UDim2.fromScale(0.5, 0.5)
+    gearHolder.AnchorPoint = Vector2.new(0.5, 0.5)
+
+    -- Continuous rotation
+    local gearRot   = 0
+    local gearSpeed = 30 -- degrees per second
+    table.insert(W._conns, RunService.RenderStepped:Connect(function(dt)
+        if not gearRing or not gearRing.Parent then return end
+        gearRot = (gearRot + dt * gearSpeed) % 360
+        gearRing.Rotation = gearRot
+    end))
+
+    settingsBtn.MouseButton1Click:Connect(function() W:ToggleSettings() end)
+    settingsBtn.MouseEnter:Connect(function()
+        for _, p in ipairs(gearParts) do
+            Tween(p, 0.15, { BackgroundColor3 = W.Theme.Accent }):Play()
+        end
+        gearSpeed = 120
+    end)
+    settingsBtn.MouseLeave:Connect(function()
+        for _, p in ipairs(gearParts) do
+            Tween(p, 0.15, { BackgroundColor3 = W.Theme.TextSecondary }):Play()
+        end
+        gearSpeed = 30
+    end)
+
+    W._gearRefs = { parts = gearParts, hole = gearHole, ring = gearRing }
+
+    -- --------------------------------------------------------
+    -- Minimize button (compact mode)
+    -- --------------------------------------------------------
+    local minBtn = Create("TextButton", {
+        Text = "-",
+        Font = Enum.Font.GothamBold,
+        TextSize = 22,
+        TextColor3 = W.Theme.TextSecondary,
+        BackgroundTransparency = 1,
+        Size = UDim2.fromOffset(36, 36),
+        Position = UDim2.new(1, -82, 0.5, -18),
+        ZIndex = 3,
+        Parent = W.Header,
+    })
+    minBtn.MouseButton1Click:Connect(function()
+        W:SetMinimized(not W.Minimized)
+    end)
+    minBtn.MouseEnter:Connect(function()
+        Tween(minBtn, 0.15, { TextColor3 = W.Theme.Accent }):Play()
+    end)
+    minBtn.MouseLeave:Connect(function()
+        Tween(minBtn, 0.15, { TextColor3 = W.Theme.TextSecondary }):Play()
+    end)
+
+    -- --------------------------------------------------------
+    -- Close button (minimize to pill)
+    -- --------------------------------------------------------
+    local closeBtn = Create("TextButton", {
+        Text = "x",
+        Font = Enum.Font.GothamBold,
+        TextSize = 18,
+        TextColor3 = W.Theme.TextSecondary,
+        BackgroundTransparency = 1,
+        Size = UDim2.fromOffset(36, 36),
+        Position = UDim2.new(1, -44, 0.5, -18),
+        ZIndex = 3,
+        Parent = W.Header,
+    })
+    closeBtn.MouseButton1Click:Connect(function()
+        W:MinimizeToPill()
+    end)
+    closeBtn.MouseEnter:Connect(function()
+        Tween(closeBtn, 0.15, { TextColor3 = Color3.fromRGB(255, 80, 80) }):Play()
+    end)
+    closeBtn.MouseLeave:Connect(function()
+        Tween(closeBtn, 0.15, { TextColor3 = W.Theme.TextSecondary }):Play()
+    end)
+
+    W._iconRefs = {
+        minimize = { label = minBtn },
+        close    = { label = closeBtn },
+    }
+
+    -- ========================================================
+    -- Separator
+    -- ========================================================
+    W.Separator = Create("Frame", {
+        Size = UDim2.new(1, -32, 0, 1),
+        Position = UDim2.fromOffset(16, 44),
+        BackgroundColor3 = W.Theme.Border,
+        BackgroundTransparency = W.Theme.BorderTrans + 0.03,
+        BorderSizePixel = 0,
+        ZIndex = 2,
+        Parent = W.Main,
+    })
+
+    -- ========================================================
+    -- Tab strip (empty — filled by 08_tab.lua)
+    -- ========================================================
+    W.TabStrip = Create("ScrollingFrame", {
+        Name = "TabStrip",
+        Size = UDim2.new(1, -32, 0, 34),
+        Position = UDim2.fromOffset(16, 52),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        ScrollBarThickness = 0,
+        ScrollingDirection = Enum.ScrollingDirection.X,
+        CanvasSize = UDim2.new(0, 0, 0, 34),
+        AutomaticCanvasSize = Enum.AutomaticSize.X,
+        ZIndex = 2,
+        Parent = W.Main,
+    })
+    Create("UIListLayout", {
+        FillDirection = Enum.FillDirection.Horizontal,
+        Padding = UDim.new(0, 6),
+        VerticalAlignment = Enum.VerticalAlignment.Center,
+        Parent = W.TabStrip,
+    })
+
+    -- ========================================================
+    -- Content (empty — filled by 08_tab.lua)
+    -- ========================================================
+    W.Content = Create("Frame", {
+        Name = "Content",
+        Size = UDim2.new(1, -24, 1, -110),
+        Position = UDim2.fromOffset(12, 94),
+        BackgroundTransparency = 1,
+        ClipsDescendants = true,
+        ZIndex = 2,
+        Parent = W.Main,
+    })
+
+    -- ========================================================
+    -- Drag (header)
+    -- ========================================================
+    local dragging, dragStart, startPos = false, nil, nil
+
+    W.Header.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = W.Main.Position
+        end
+    end)
+
+    table.insert(W._conns, UserInputService.InputChanged:Connect(function(input)
+        if not dragging then return end
+        if input.UserInputType == Enum.UserInputType.MouseMovement
+            or input.UserInputType == Enum.UserInputType.Touch then
+            local d = input.Position - dragStart
+            W.Main.Position = UDim2.new(
+                startPos.X.Scale, startPos.X.Offset + d.X,
+                startPos.Y.Scale, startPos.Y.Offset + d.Y
+            )
+        end
+    end))
+
+    table.insert(W._conns, UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
+            if dragging then
+                dragging = false
+                ClampPosition(W.Main)
+            end
+        end
+    end))
+
+    -- ========================================================
+    -- Resize handle (bottom-right)
+    -- ========================================================
+    local resizeHandle = Create("TextButton", {
+        Text = "",
+        BackgroundTransparency = 1,
+        Size = UDim2.fromOffset(20, 20),
+        Position = UDim2.new(1, -20, 1, -20),
+        ZIndex = 4,
+        Parent = W.Main,
+    })
+
+    local grip1 = Create("Frame", {
+        Size = UDim2.fromOffset(12, 2),
+        Position = UDim2.new(1, -6, 1, -6),
+        AnchorPoint = Vector2.new(1, 0.5),
+        Rotation = 45,
+        BackgroundColor3 = W.Theme.TextMuted,
+        BackgroundTransparency = 0.5,
+        BorderSizePixel = 0,
+        Parent = resizeHandle,
+    })
+    Corner(1, grip1)
+
+    local grip2 = Create("Frame", {
+        Size = UDim2.fromOffset(8, 2),
+        Position = UDim2.new(1, -6, 1, -3),
+        AnchorPoint = Vector2.new(1, 0.5),
+        Rotation = 45,
+        BackgroundColor3 = W.Theme.TextMuted,
+        BackgroundTransparency = 0.5,
+        BorderSizePixel = 0,
+        Parent = resizeHandle,
+    })
+    Corner(1, grip2)
+
+    W._gripFrames = { grip1, grip2 }
+
+    local resizing, rStart, rStartSize = false, nil, nil
+
+    resizeHandle.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
+            resizing = true
+            rStart = input.Position
+            rStartSize = { X = W._width, Y = W._height }
+        end
+    end)
+
+    table.insert(W._conns, UserInputService.InputChanged:Connect(function(input)
+        if not resizing then return end
+        if input.UserInputType == Enum.UserInputType.MouseMovement
+            or input.UserInputType == Enum.UserInputType.Touch then
+            local d = input.Position - rStart
+            W._width  = math.clamp(rStartSize.X + d.X, W._minWidth,  W._maxWidth)
+            W._height = math.clamp(rStartSize.Y + d.Y, W._minHeight, W._maxHeight)
+            W._fullSize      = UDim2.fromOffset(W._width, W._height)
+            W._collapsedSize = UDim2.fromOffset(W._width, 44)
+            if not W.Minimized then
+                W.Main.Size = UDim2.fromOffset(W._width, W._height)
+                W.Content.Size = UDim2.new(1, -24, 1, -110)
+            end
+        end
+    end))
+
+    table.insert(W._conns, UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
+            if resizing then
+                resizing = false
+                ClampPosition(W.Main)
+            end
+        end
+    end))
+
+    -- ========================================================
+    -- RightShift toggle
+    -- ========================================================
+    table.insert(W._conns, UserInputService.InputBegan:Connect(function(input, processed)
+        if processed then return end
+        if input.KeyCode == Enum.KeyCode.RightShift then
+            if W.Floating then
+                W:RestoreFromPill()
+            else
+                W:SetVisible(not W.Visible)
+            end
+        end
+    end))
+
+    -- ========================================================
+    -- Settings panel (empty container — filled by 07_settings.lua)
+    -- ========================================================
+    W.SettingsPanel = Create("CanvasGroup", {
+        Name = "SettingsPanel",
+        Size = UDim2.new(1, 0, 1, -45),
+        Position = UDim2.new(0, 0, 0, 45),
+        BackgroundColor3 = W.Theme.Background,
+        BackgroundTransparency = 0.15,
+        BorderSizePixel = 0,
+        Visible = false,
+        GroupTransparency = 1,
+        ZIndex = 5,
+        Parent = W.Main,
+    })
+    Corner(0, W.SettingsPanel)
+
+    -- Settings sub-header
+    local spHeader = Create("Frame", {
+        Size = UDim2.new(1, 0, 0, 40),
+        BackgroundTransparency = 1,
+        ZIndex = 6,
+        Parent = W.SettingsPanel,
+    })
+
+    local backBtn = Create("TextButton", {
+        Text = "",
+        BackgroundTransparency = 1,
+        Size = UDim2.fromOffset(32, 32),
+        Position = UDim2.fromOffset(12, 4),
+        ZIndex = 7,
+        Parent = spHeader,
+    })
+    local backLbl = Create("TextLabel", {
+        Text = "<",
+        Font = Enum.Font.GothamBold,
+        TextSize = 22,
+        TextColor3 = W.Theme.TextSecondary,
+        BackgroundTransparency = 1,
+        Size = UDim2.fromScale(1, 1),
+        ZIndex = 7,
+        Parent = backBtn,
+    })
+    backBtn.MouseButton1Click:Connect(function() W:ToggleSettings(false) end)
+
+    Create("TextLabel", {
+        Text = "Settings",
+        Font = Enum.Font.GothamBold,
+        TextSize = 16,
+        TextColor3 = W.Theme.TextPrimary,
+        BackgroundTransparency = 1,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Position = UDim2.fromOffset(52, 0),
+        Size = UDim2.new(1, -60, 1, 0),
+        ZIndex = 7,
+        Parent = spHeader,
+    })
+
+    Create("Frame", {
+        Size = UDim2.new(1, -24, 0, 1),
+        Position = UDim2.fromOffset(12, 40),
+        BackgroundColor3 = W.Theme.Border,
+        BackgroundTransparency = W.Theme.BorderTrans + 0.03,
+        BorderSizePixel = 0,
+        ZIndex = 7,
+        Parent = W.SettingsPanel,
+    })
+
+    -- Scrollable content area for settings
+    local spContent = Create("ScrollingFrame", {
+        Size = UDim2.new(1, -20, 1, -50),
+        Position = UDim2.fromOffset(10, 44),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        ScrollBarThickness = 3,
+        ScrollBarImageColor3 = W.Theme.TextMuted,
+        ScrollBarImageTransparency = 0.5,
+        CanvasSize = UDim2.new(0, 0, 0, 0),
+        AutomaticCanvasSize = Enum.AutomaticSize.Y,
+        ZIndex = 6,
+        Parent = W.SettingsPanel,
+    })
+    Create("UIListLayout", {
+        Padding = UDim.new(0, 10),
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        Parent = spContent,
+    })
+    Create("UIPadding", {
+        PaddingRight = UDim.new(0, 8),
+        PaddingBottom = UDim.new(0, 12),
+        Parent = spContent,
+    })
+
+    W._spContent       = spContent
+    W._settingsOrder   = 0
+    W._backArrowLbl    = backLbl
+
+    -- ========================================================
+    -- Floating pill (minimize-to-pill target)
+    -- ========================================================
+    W.FloatingPill = Create("TextButton", {
+        Name = "FloatingPill",
+        Text = "",
+        Size = UDim2.fromOffset(180, 32),
+        Position = UDim2.new(0.5, 0, 0, 8),
+        AnchorPoint = Vector2.new(0.5, 0),
+        BackgroundColor3 = W.Theme.Background,
+        BackgroundTransparency = W.Theme.BackgroundTrans,
+        AutoButtonColor = false,
+        Visible = false,
+        Parent = W.Gui,
+    })
+    Corner(16, W.FloatingPill)
+    W._pillStroke = Stroke(W.Theme.Accent, 1, 0.3, W.FloatingPill)
+
+    W._pillDot = Create("Frame", {
+        Size = UDim2.fromOffset(8, 8),
+        Position = UDim2.fromOffset(14, 12),
+        BackgroundColor3 = W.Theme.Accent,
+        BorderSizePixel = 0,
+        Parent = W.FloatingPill,
+    })
+    Corner(4, W._pillDot)
+
+    W._pillLabel = Create("TextLabel", {
+        Text = W.Name,
+        Font = Enum.Font.GothamBold,
+        TextSize = 13,
+        TextColor3 = W.Theme.TextPrimary,
+        BackgroundTransparency = 1,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Position = UDim2.fromOffset(28, 0),
+        Size = UDim2.new(1, -34, 1, 0),
+        Parent = W.FloatingPill,
+    })
+
+    -- Pill drag
+    local pillDragging, pillDragStart, pillStartPos = false, nil, nil
+
+    W.FloatingPill.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
+            pillDragging = true
+            pillDragStart = input.Position
+            pillStartPos = W.FloatingPill.Position
+        end
+    end)
+
+    table.insert(W._conns, UserInputService.InputChanged:Connect(function(input)
+        if not pillDragging then return end
+        if input.UserInputType == Enum.UserInputType.MouseMovement
+            or input.UserInputType == Enum.UserInputType.Touch then
+            local d = input.Position - pillDragStart
+            if math.abs(d.X) > 5 or math.abs(d.Y) > 5 then
+                W._pillMoved = true
+            end
+            W.FloatingPill.Position = UDim2.new(
+                pillStartPos.X.Scale, pillStartPos.X.Offset + d.X,
+                pillStartPos.Y.Scale, pillStartPos.Y.Offset + d.Y
+            )
+        end
+    end))
+
+    table.insert(W._conns, UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
+            if pillDragging then
+                pillDragging = false
+                ClampPosition(W.FloatingPill)
+            end
+        end
+    end))
+
+    W.FloatingPill.MouseButton1Click:Connect(function()
+        if W._pillMoved then
+            W._pillMoved = false
+            return
+        end
+        W:RestoreFromPill()
+    end)
+
+    -- ========================================================
+    -- Register window
+    -- ========================================================
+    table.insert(LucidUI._windows, W)
+
+    print("[LucidUI] Window created:", W.Name)
+
+    -- ========================================================
+    -- Entrance (runs after intro finishes, or immediately if no intro)
+    -- ========================================================
+    local entranceScale = Create("UIScale", { Scale = 0.90, Parent = W.Main })
+
+    local function RunEntrance()
+        W.Main.Visible = true
+        W.Gui.Enabled = true
+        entranceScale.Scale = 0.90
+        W.Main.BackgroundTransparency = 1
+        Tween(entranceScale, 0.40, { Scale = 1 }, Enum.EasingStyle.Back, Enum.EasingDirection.Out):Play()
+        Tween(W.Main, 0.40, { BackgroundTransparency = W.Theme.BackgroundTrans }):Play()
+    end
+
+    if config.IntroEnabled ~= false and type(LucidUI.ShowIntro) == "function" then
+        LucidUI:ShowIntro({
+            Title      = config.IntroTitle or W.Name,
+            Subtitle   = config.IntroSubtitle or ("v" .. LucidUI._version),
+            Tagline    = config.IntroTagline or "Modern interface suite",
+            Duration   = config.IntroDuration or 1.6,
+            Theme      = W.Theme,
+            SkipOnInput = config.IntroSkipOnInput ~= false,
+            OnComplete = RunEntrance,
+        })
+    else
+        RunEntrance()
+    end
+
+    return W
+end
+
+-- ============================================================
+-- Minimize to pill
+-- ============================================================
+function LucidUI.Window:MinimizeToPill()
+    if not self.FloatingPill then return end
+    self.Floating = true
+
+    local mx, my = self.Main.Position.X, self.Main.Position.Y
+
+    local mainSlide = TweenService:Create(self.Main, Ease.In(0.22), {
+        Position = UDim2.new(mx.Scale, mx.Offset, my.Scale, my.Offset - 30),
+        BackgroundTransparency = 1,
+    })
+    mainSlide:Play()
+
+    mainSlide.Completed:Connect(function()
+        if not self.Floating then return end
+
+        self.Main.Visible = false
+        self.Main.Position = UDim2.new(0.5, 0, 0.5, 0)
+
+        self.FloatingPill.Visible = true
+        self.FloatingPill.Position = UDim2.new(0.5, 0, 0, -50)
+        self.FloatingPill.BackgroundTransparency = 1
+        self._pillStroke.Transparency = 1
+        self._pillDot.BackgroundTransparency = 1
+        self._pillLabel.TextTransparency = 1
+
+        TweenService:Create(self.FloatingPill, Ease.Out(0.32), {
+            Position = UDim2.new(0.5, 0, 0, 8),
+        }):Play()
+        TweenService:Create(self.FloatingPill, Ease.FadeIn(0.25), {
+            BackgroundTransparency = self.Theme.BackgroundTrans,
+        }):Play()
+        TweenService:Create(self._pillStroke, Ease.FadeIn(0.28), { Transparency = 0.3 }):Play()
+        TweenService:Create(self._pillDot, Ease.FadeIn(0.25), { BackgroundTransparency = 0 }):Play()
+        TweenService:Create(self._pillLabel, Ease.FadeIn(0.25), { TextTransparency = 0 }):Play()
+    end)
+end
+
+-- ============================================================
+-- Restore from pill
+-- ============================================================
+function LucidUI.Window:RestoreFromPill()
+    if not self.FloatingPill then return end
+    self.Floating = false
+
+    local slide = TweenService:Create(self.FloatingPill, Ease.In(0.26), {
+        Position = UDim2.new(0.5, 0, 0, -50),
+    })
+    slide:Play()
+
+    TweenService:Create(self.FloatingPill, Ease.FadeOut(0.20), { BackgroundTransparency = 1 }):Play()
+    TweenService:Create(self._pillStroke, Ease.FadeOut(0.20), { Transparency = 1 }):Play()
+    TweenService:Create(self._pillDot, Ease.FadeOut(0.18), { BackgroundTransparency = 1 }):Play()
+    TweenService:Create(self._pillLabel, Ease.FadeOut(0.18), { TextTransparency = 1 }):Play()
+
+    self.Main.Visible = true
+    self.Main.Position = UDim2.new(0.5, 0, 0.5, -20)
+    self.Main.BackgroundTransparency = 1
+
+    TweenService:Create(self.Main, Ease.Out(0.35), {
+        Position = UDim2.new(0.5, 0, 0.5, 0),
+        BackgroundTransparency = self.Theme.BackgroundTrans,
+    }):Play()
+
+    slide.Completed:Connect(function()
+        if not self.Floating then
+            self.FloatingPill.Visible = false
+        end
+    end)
+
+    task.delay(0.4, function() ClampPosition(self.Main) end)
+end
+
+-- ============================================================
+-- Toggle settings panel
+-- ============================================================
+function LucidUI.Window:ToggleSettings(state)
+    if state == nil then state = not self.SettingsOpen end
+    self.SettingsOpen = state
+
+    local SHOWN  = UDim2.new(0, 0, 0, 45)
+    local HIDDEN = UDim2.new(0, 0, 0, 85)
+
+    if state then
+        self.TabStrip.Visible  = false
+        self.Content.Visible   = false
+        self.Separator.Visible = false
+
+        self.SettingsPanel.Visible = true
+        self.SettingsPanel.Position = HIDDEN
+        self.SettingsPanel.GroupTransparency = 1
+
+        TweenService:Create(self.SettingsPanel, Ease.Out(0.38), { Position = SHOWN }):Play()
+        TweenService:Create(self.SettingsPanel, Ease.FadeIn(0.32), { GroupTransparency = 0 }):Play()
+
+        -- Refresh callbacks registered by settings module
+        if self._themeSlotsRefresh      then pcall(self._themeSlotsRefresh) end
+        if self._savedThemeSlotsRefresh then pcall(self._savedThemeSlotsRefresh) end
+        if self._themeDropdownRefresh   then pcall(self._themeDropdownRefresh) end
+    else
+        local slide = TweenService:Create(self.SettingsPanel, Ease.In(0.26), { Position = HIDDEN })
+        slide:Play()
+        TweenService:Create(self.SettingsPanel, Ease.FadeOut(0.22), { GroupTransparency = 1 }):Play()
+
+        slide.Completed:Connect(function()
+            if not self.SettingsOpen then
+                self.SettingsPanel.Visible = false
+                if not self.Minimized then
+                    self.TabStrip.Visible  = true
+                    self.Content.Visible   = true
+                    self.Separator.Visible = true
+                end
+            end
+        end)
+    end
+end
+
+-- ============================================================
+-- SetVisible
+-- ============================================================
+function LucidUI.Window:SetVisible(state)
+    self.Visible = state
+    if self.Gui then self.Gui.Enabled = state end
+end
+
+-- ============================================================
+-- Compact minimize (the "-" button)
+-- ============================================================
+function LucidUI.Window:SetMinimized(state)
+    self.Minimized = state
+    local targetY = state and 44 or self._height
+
+    TweenService:Create(self.Main, Ease.Out(0.30), {
+        Size = UDim2.fromOffset(self._width, targetY),
+    }):Play()
+
+    if state then
+        self.Content.Visible   = false
+        self.Separator.Visible = false
+        self.TabStrip.Visible  = false
+        if self.SettingsOpen then self:ToggleSettings(false) end
+    else
+        if not self.SettingsOpen then
+            self.Content.Visible   = true
+            self.Separator.Visible = true
+            self.TabStrip.Visible  = true
+        end
+    end
+
+    task.delay(0.35, function() ClampPosition(self.Main) end)
+end
+
+-- ============================================================
+-- Theme switching
+-- ============================================================
+function LucidUI.Window:SetTheme(name)
+    if name == "Custom" or name == "__custom_runtime" then
+        self:ApplyCustomTheme()
+        return
+    end
+    if name == "Default" then
+        self.Theme = LucidUI.Themes.Default
+        self.ThemeName = "Default"
+        self._customThemeActive = false
+        LucidUI._lastTheme = self.Theme
+        self:SetThemeObject(self.Theme)
+        return
+    end
+    self:LoadCustomTheme(name)
+end
+
+function LucidUI.Window:SetThemeObject(t)
+    if not t then return end
+
+    self.Main.BackgroundColor3 = t.Background
+    if not (self._bgImage and self._bgImage.Visible) then
+        self.Main.BackgroundTransparency = t.BackgroundTrans or 0.20
+    end
+
+    self.TitleLabel.TextColor3      = t.TextPrimary
+    self.Separator.BackgroundColor3 = t.Border
+    self.SettingsPanel.BackgroundColor3 = t.Background
+
+    local accent = self._accentOverride or t.Accent
+    if self._pillStroke then self._pillStroke.Color = accent end
+
+    if self.FloatingPill then
+        self.FloatingPill.BackgroundColor3 = t.Background
+        self._pillLabel.TextColor3 = t.TextPrimary
+        self._pillDot.BackgroundColor3 = accent
+    end
+
+    if self._gearRefs then
+        for _, p in ipairs(self._gearRefs.parts) do
+            p.BackgroundColor3 = t.TextSecondary
+        end
+        self._gearRefs.hole.BackgroundColor3 = t.Background
+    end
+
+    if self._iconRefs then
+        self._iconRefs.minimize.label.TextColor3 = t.TextSecondary
+        self._iconRefs.close.label.TextColor3    = t.TextSecondary
+    end
+
+    if self._backArrowLbl then
+        self._backArrowLbl.TextColor3 = t.TextSecondary
+    end
+
+    for _, g in ipairs(self._gripFrames or {}) do
+        g.BackgroundColor3 = t.TextMuted
+    end
+
+    for _, tb in ipairs(self.Tabs) do
+        local active = (tb == self.ActiveTab)
+        if tb.Label then
+            tb.Label.TextColor3 = active and t.TabActive or t.TabInactive
+        end
+    end
+
+    for _, fn in ipairs(self._themeElements) do
+        pcall(fn, t)
+    end
+end
+
+function LucidUI.Window:SetAccent(c)
+    self._accentOverride = c
+    self.Theme.Accent = c
+
+    for _, fn in ipairs(self._themeElements) do pcall(fn, self.Theme) end
+
+    if self._pillStroke then self._pillStroke.Color = c end
+    if self._pillDot    then self._pillDot.BackgroundColor3 = c end
+end
+
+function LucidUI.Window:_registerTheme(fn)
+    table.insert(self._themeElements, fn)
+end
