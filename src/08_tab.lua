@@ -563,47 +563,59 @@ function LucidUI.Section:SetExpanded(state, instant)
     local wrapper   = self.Wrapper
     local container = self.Container
 
-    local target = self:_measureHeight()
-    if target <= 0 then target = 1 end
+    -- Read real content height from the layout
+    local layout = container:FindFirstChildOfClass("UIListLayout")
+    local contentH = 0
+    if layout then
+        contentH = layout.AbsoluteContentSize.Y
+    end
+    if contentH <= 0 then
+        contentH = container.Size.Y.Offset
+    end
+    if contentH <= 0 then
+        for _, child in ipairs(container:GetChildren()) do
+            if child:IsA("GuiObject") and child.Visible then
+                contentH = contentH + child.Size.Y.Offset
+            end
+        end
+    end
+    if contentH <= 0 then contentH = 40 end
 
-    if instant or not self.Collapsible then
+    -- Non-collapsible or instant: snap
+    if not self.Collapsible or instant then
         wrapper.AutomaticSize = Enum.AutomaticSize.None
         if state then
-            wrapper.Size = UDim2.new(1, 0, 0, target)
+            wrapper.Size = UDim2.new(1, 0, 0, contentH)
+            wrapper.AutomaticSize = Enum.AutomaticSize.Y
         else
             wrapper.Size = UDim2.new(1, 0, 0, 0)
         end
         return
     end
 
+    -- Freeze container so its children don't fight the tween
     container.AutomaticSize = Enum.AutomaticSize.None
-    container.Size = UDim2.new(1, 0, 0, target)
+    container.Size = UDim2.new(1, 0, 0, contentH)
     wrapper.AutomaticSize = Enum.AutomaticSize.None
 
-    local function finalize()
+    -- Set starting size
+    if state then
+        wrapper.Size = UDim2.new(1, 0, 0, 0)
+    else
+        wrapper.Size = UDim2.new(1, 0, 0, contentH)
+    end
+
+    local targetH = state and contentH or 0
+    local t = TweenService:Create(wrapper,
+        TweenInfo.new(0.35, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
+        { Size = UDim2.new(1, 0, 0, targetH) }
+    )
+    t:Play()
+
+    t.Completed:Connect(function()
         container.AutomaticSize = Enum.AutomaticSize.Y
         if self.Expanded then
             wrapper.AutomaticSize = Enum.AutomaticSize.Y
         end
-    end
-
-    if state then
-        wrapper.Size = UDim2.new(1, 0, 0, 0)
-        local tween = TweenService:Create(wrapper, Ease.Out(0.35), {
-            Size = UDim2.new(1, 0, 0, target),
-        })
-        tween:Play()
-        tween.Completed:Connect(function()
-            if self.Expanded then finalize() end
-        end)
-    else
-        wrapper.Size = UDim2.new(1, 0, 0, target)
-        local tween = TweenService:Create(wrapper, Ease.In(0.30), {
-            Size = UDim2.new(1, 0, 0, 0),
-        })
-        tween:Play()
-        tween.Completed:Connect(function()
-            if not self.Expanded then finalize() end
-        end)
-    end
+    end)
 end
