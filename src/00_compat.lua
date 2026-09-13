@@ -163,5 +163,3 @@ function Compat.deserializeColors(t)
     end
     return out
 end
-
-return Compat
