@@ -181,12 +181,12 @@ function LucidUI:CreateWindow(config)
 
     W._gearRefs = { parts = gearParts, hole = gearHole, ring = gearRing }
 
-    -- Minimize button
+    -- Minimize button (orange dash)
     local minBtn = Create("TextButton", {
         Text = "-",
         Font = Enum.Font.GothamBold,
         TextSize = 22,
-        TextColor3 = W.Theme.TextSecondary,
+        TextColor3 = Color3.fromRGB(255, 165, 60),  -- orange
         BackgroundTransparency = 1,
         Size = UDim2.fromOffset(36, 36),
         Position = UDim2.new(1, -82, 0.5, -18),
@@ -197,18 +197,18 @@ function LucidUI:CreateWindow(config)
         W:SetMinimized(not W.Minimized)
     end)
     minBtn.MouseEnter:Connect(function()
-        Tween(minBtn, 0.15, { TextColor3 = W.Theme.Accent }):Play()
+        Tween(minBtn, 0.15, { TextColor3 = Color3.fromRGB(255, 200, 120) }):Play()
     end)
     minBtn.MouseLeave:Connect(function()
-        Tween(minBtn, 0.15, { TextColor3 = W.Theme.TextSecondary }):Play()
+        Tween(minBtn, 0.15, { TextColor3 = Color3.fromRGB(255, 165, 60) }):Play()
     end)
 
-    -- Close button (minimize to pill)
+    -- Close button (red X)
     local closeBtn = Create("TextButton", {
         Text = "x",
         Font = Enum.Font.GothamBold,
         TextSize = 18,
-        TextColor3 = W.Theme.TextSecondary,
+        TextColor3 = Color3.fromRGB(230, 70, 70),  -- red
         BackgroundTransparency = 1,
         Size = UDim2.fromOffset(36, 36),
         Position = UDim2.new(1, -44, 0.5, -18),
@@ -219,16 +219,11 @@ function LucidUI:CreateWindow(config)
         W:MinimizeToPill()
     end)
     closeBtn.MouseEnter:Connect(function()
-        Tween(closeBtn, 0.15, { TextColor3 = Color3.fromRGB(255, 80, 80) }):Play()
+        Tween(closeBtn, 0.15, { TextColor3 = Color3.fromRGB(255, 110, 110) }):Play()
     end)
     closeBtn.MouseLeave:Connect(function()
-        Tween(closeBtn, 0.15, { TextColor3 = W.Theme.TextSecondary }):Play()
+        Tween(closeBtn, 0.15, { TextColor3 = Color3.fromRGB(230, 70, 70) }):Play()
     end)
-
-    W._iconRefs = {
-        minimize = { label = minBtn },
-        close    = { label = closeBtn },
-    }
 
     -- Separator
     W.Separator = Create("Frame", {
