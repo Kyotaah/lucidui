@@ -270,7 +270,7 @@ If you find a bug or want to add a feature, open an issue or PR. Keep the `Compa
 
 ## License
 
-MIT — see [LICENSE]((https://github.com/Kyotaah/lucidui/blob/main/LICENSE.md)). Do whatever you want with it.
+MIT — see ([LICENSE](https://github.com/Kyotaah/lucidui/blob/main/LICENSE.md)). Do whatever you want with it.
 
 ---
 
