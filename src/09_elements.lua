@@ -12,11 +12,9 @@
 -- ============================================================
 -- Button
 -- ============================================================
-function LucidUI.Section:CreateButton(config)
+     function LucidUI.Section:CreateButton(config)
     config = config or {}
-
-    local win   = self.Tab.Window
-    local theme = win.Theme
+    local win, theme = self.Tab.Window, self.Tab.Window.Theme
 
     local btn = Create("TextButton", {
         Text = "",
@@ -28,7 +26,6 @@ function LucidUI.Section:CreateButton(config)
         ZIndex = 2,
     })
     Corner(10, btn)
-
     local stroke = Stroke(theme.Border, 1, theme.BorderTrans + 0.05, btn)
 
     local label = Create("TextLabel", {
@@ -38,9 +35,13 @@ function LucidUI.Section:CreateButton(config)
         TextColor3 = theme.TextPrimary,
         BackgroundTransparency = 1,
         Size = UDim2.fromScale(1, 1),
-        ZIndex = 2,
+        ZIndex = 3,
         Parent = btn,
     })
+
+    AttachRipple(btn)
+    AttachHoverGlow(btn, theme.Accent)
+    AttachHoverSound(btn)
 
     btn.MouseEnter:Connect(function()
         Tween(btn, 0.15, {
@@ -62,21 +63,18 @@ function LucidUI.Section:CreateButton(config)
         Tween(btn, 0.15, { Size = UDim2.new(1, 0, 0, 36) }):Play()
     end)
     btn.MouseButton1Click:Connect(function()
+        PlayUISound("click")
         if config.Callback then pcall(config.Callback) end
     end)
 
     win:_registerTheme(function(t)
         btn.BackgroundColor3 = t.Surface
-        label.TextColor3     = t.TextPrimary
-        stroke.Color         = t.Border
+        label.TextColor3 = t.TextPrimary
+        stroke.Color = t.Border
     end)
 
     self:_track(btn)
-
-    return {
-        Instance = btn,
-        SetText = function(_, text) label.Text = tostring(text) end,
-    }
+    return { Instance = btn, SetText = function(_, text) label.Text = tostring(text) end }
 end
 
 -- ============================================================
@@ -84,11 +82,9 @@ end
 -- ============================================================
 function LucidUI.Section:CreateToggle(config)
     config = config or {}
-
-    local win   = self.Tab.Window
-    local theme = win.Theme
+    local win, theme = self.Tab.Window, self.Tab.Window.Theme
     local state = config.CurrentValue or false
-    local flag  = config.Flag
+    local flag = config.Flag
 
     local row = Create("Frame", {
         BackgroundColor3 = theme.Surface,
@@ -98,7 +94,6 @@ function LucidUI.Section:CreateToggle(config)
         ZIndex = 2,
     })
     Corner(10, row)
-
     local rowStroke = Stroke(theme.Border, 1, theme.BorderTrans + 0.05, row)
 
     local label = Create("TextLabel", {
@@ -110,7 +105,7 @@ function LucidUI.Section:CreateToggle(config)
         TextXAlignment = Enum.TextXAlignment.Left,
         Position = UDim2.fromOffset(14, 0),
         Size = UDim2.new(1, -80, 1, 0),
-        ZIndex = 2,
+        ZIndex = 3,
         Parent = row,
     })
 
@@ -119,19 +114,17 @@ function LucidUI.Section:CreateToggle(config)
         Position = UDim2.new(1, -58, 0.5, -12),
         BackgroundColor3 = state and theme.Accent or theme.ToggleOff,
         BorderSizePixel = 0,
-        ZIndex = 2,
+        ZIndex = 3,
         Parent = row,
     })
     Corner(12, track)
 
     local knob = Create("Frame", {
         Size = UDim2.fromOffset(20, 20),
-        Position = state
-            and UDim2.new(1, -22, 0.5, -10)
-            or  UDim2.fromOffset(2, 2),
+        Position = state and UDim2.new(1, -22, 0.5, -10) or UDim2.fromOffset(2, 2),
         BackgroundColor3 = Color3.fromRGB(255, 255, 255),
         BorderSizePixel = 0,
-        ZIndex = 2,
+        ZIndex = 4,
         Parent = track,
     })
     Corner(10, knob)
@@ -140,19 +133,22 @@ function LucidUI.Section:CreateToggle(config)
         Text = "",
         BackgroundTransparency = 1,
         Size = UDim2.fromScale(1, 1),
-        ZIndex = 2,
+        ZIndex = 5,
         Parent = row,
     })
 
+    AttachHoverGlow(row, theme.Accent)
+    AttachHoverSound(row)
+
     local function update(value, silent)
         state = value
+
         Tween(track, 0.22, {
             BackgroundColor3 = state and theme.Accent or theme.ToggleOff,
         }, Enum.EasingStyle.Quart):Play()
+
         Tween(knob, 0.22, {
-            Position = state
-                and UDim2.new(1, -22, 0.5, -10)
-                or  UDim2.fromOffset(2, 2),
+            Position = state and UDim2.new(1, -22, 0.5, -10) or UDim2.fromOffset(2, 2),
         }, Enum.EasingStyle.Quart):Play()
 
         if flag then win._configData[flag] = state end
@@ -160,6 +156,7 @@ function LucidUI.Section:CreateToggle(config)
     end
 
     clickArea.MouseButton1Click:Connect(function()
+        PlayUISound("click")
         update(not state)
     end)
     clickArea.MouseEnter:Connect(function()
@@ -173,8 +170,8 @@ function LucidUI.Section:CreateToggle(config)
 
     win:_registerTheme(function(t)
         row.BackgroundColor3 = t.Surface
-        label.TextColor3     = t.TextPrimary
-        rowStroke.Color      = t.Border
+        label.TextColor3 = t.TextPrimary
+        rowStroke.Color = t.Border
         track.BackgroundColor3 = state and t.Accent or t.ToggleOff
     end)
 
@@ -184,7 +181,6 @@ function LucidUI.Section:CreateToggle(config)
         Set = function(_, value) update(value, true) end,
         Get = function() return state end,
     }
-
     if flag then
         win._elementsByFlag[flag] = obj
         win._configData[flag] = state
