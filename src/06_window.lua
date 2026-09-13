@@ -203,7 +203,6 @@ function LucidUI:CreateWindow(config)
     })
 
     closeBtn.MouseButton1Click:Connect(function() W:MinimizeToPill() end)
-    closeBtn.MouseButton1Enter = nil
     closeBtn.MouseEnter:Connect(function()
         Tween(closeBtn, 0.15, { BackgroundColor3 = Color3.fromRGB(255, 130, 120) }):Play()
         Tween(closeDot, 0.15, { TextTransparency = 0 }):Play()
