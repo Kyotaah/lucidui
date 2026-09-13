@@ -1,21 +1,283 @@
 --[[
-    Tab + Section — the layout containers that elements live inside.
+    Tab + Section — layout containers plus frame-based tab icons.
 
     Tab:
-      • Renders a pill-shaped button in the window's tab strip
-      • Owns a full-size ScrollingFrame page that shows when active
-      • Handles hover / selection state, colors follow the theme
+      • Pill button with an optional icon on the left
+      • Full-size ScrollingFrame page shown when active
+      • Theme callback updates label + icon colors together
 
     Section:
-      • Collapsible header with an ASCII chevron (v / >)
-      • A "wrapper" Frame with ClipsDescendants owns the animated height
-      • A nested "container" Frame auto-sizes to its children
-      • Elements attach to the container via section:_track(frame)
-
-    Height measurement is deterministic: we sum each child's declared
-    Size.Y.Offset plus the list padding. This avoids the layout-timing
-    bugs you get when a tween races the layout pass.
+      • Collapsible header with ASCII chevron (v / >)
+      • Wrapper owns the animated height; container holds elements
+      • When expanded and stable, the wrapper has AutomaticSize.Y
+        so it grows with dynamic content (Live Status, rebuilt lists)
+      • During transitions, AutomaticSize is disabled and the
+        wrapper tweens to a fixed height for a smooth animation
 ]]
+
+-- ============================================================
+-- Icon builders
+-- Every icon is drawn with Frames only. Returns: holder, parts
+-- where parts is an array of Frames that get recolored on theme
+-- ============================================================
+local function IconHolder(parent, size)
+    return Create("Frame", {
+        Size = UDim2.fromOffset(size, size),
+        BackgroundTransparency = 1,
+        Parent = parent,
+    })
+end
+
+LucidUI.IconBuilders = {}
+
+LucidUI.IconBuilders.dot = function(parent, size, color)
+    local holder = IconHolder(parent, size)
+    local dot = Create("Frame", {
+        Size = UDim2.fromOffset(size * 0.7, size * 0.7),
+        Position = UDim2.fromScale(0.5, 0.5),
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        BackgroundColor3 = color,
+        BorderSizePixel = 0,
+        Parent = holder,
+    })
+    Corner(999, dot)
+    return holder, { dot }
+end
+
+LucidUI.IconBuilders.bars = function(parent, size, color)
+    local holder = IconHolder(parent, size)
+    local parts = {}
+    for i = 1, 3 do
+        local y = 0.2 + (i - 1) * 0.3
+        local line = Create("Frame", {
+            Size = UDim2.fromOffset(size * 0.75, math.max(math.floor(size / 7), 2)),
+            Position = UDim2.new(0.5, 0, y, 0),
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            BackgroundColor3 = color,
+            BorderSizePixel = 0,
+            Parent = holder,
+        })
+        Corner(1, line)
+        table.insert(parts, line)
+    end
+    return holder, parts
+end
+
+LucidUI.IconBuilders.diamond = function(parent, size, color)
+    local holder = IconHolder(parent, size)
+    local diamond = Create("Frame", {
+        Size = UDim2.fromOffset(size * 0.6, size * 0.6),
+        Position = UDim2.fromScale(0.5, 0.5),
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Rotation = 45,
+        BackgroundColor3 = color,
+        BorderSizePixel = 0,
+        Parent = holder,
+    })
+    Corner(2, diamond)
+    return holder, { diamond }
+end
+
+LucidUI.IconBuilders.cross = function(parent, size, color)
+    local holder = IconHolder(parent, size)
+    local thickness = math.max(math.floor(size / 7), 2)
+    local len = size * 0.8
+    local a = Create("Frame", {
+        Size = UDim2.fromOffset(len, thickness),
+        Position = UDim2.fromScale(0.5, 0.5),
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Rotation = 45,
+        BackgroundColor3 = color,
+        BorderSizePixel = 0,
+        Parent = holder,
+    })
+    Corner(1, a)
+    local b = Create("Frame", {
+        Size = UDim2.fromOffset(len, thickness),
+        Position = UDim2.fromScale(0.5, 0.5),
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Rotation = -45,
+        BackgroundColor3 = color,
+        BorderSizePixel = 0,
+        Parent = holder,
+    })
+    Corner(1, b)
+    return holder, { a, b }
+end
+
+LucidUI.IconBuilders.plus = function(parent, size, color)
+    local holder = IconHolder(parent, size)
+    local thickness = math.max(math.floor(size / 7), 2)
+    local len = size * 0.8
+    local h = Create("Frame", {
+        Size = UDim2.fromOffset(len, thickness),
+        Position = UDim2.fromScale(0.5, 0.5),
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        BackgroundColor3 = color,
+        BorderSizePixel = 0,
+        Parent = holder,
+    })
+    Corner(1, h)
+    local v = Create("Frame", {
+        Size = UDim2.fromOffset(thickness, len),
+        Position = UDim2.fromScale(0.5, 0.5),
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        BackgroundColor3 = color,
+        BorderSizePixel = 0,
+        Parent = holder,
+    })
+    Corner(1, v)
+    return holder, { h, v }
+end
+
+LucidUI.IconBuilders.check = function(parent, size, color)
+    local holder = IconHolder(parent, size)
+    local thickness = math.max(math.floor(size / 7), 2)
+    local short = Create("Frame", {
+        Size = UDim2.fromOffset(size * 0.35, thickness),
+        Position = UDim2.new(0.35, 0, 0.6, 0),
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Rotation = 45,
+        BackgroundColor3 = color,
+        BorderSizePixel = 0,
+        Parent = holder,
+    })
+    Corner(1, short)
+    local long = Create("Frame", {
+        Size = UDim2.fromOffset(size * 0.6, thickness),
+        Position = UDim2.new(0.6, 0, 0.45, 0),
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Rotation = -45,
+        BackgroundColor3 = color,
+        BorderSizePixel = 0,
+        Parent = holder,
+    })
+    Corner(1, long)
+    return holder, { short, long }
+end
+
+LucidUI.IconBuilders.shield = function(parent, size, color)
+    local holder = IconHolder(parent, size)
+    local top = Create("Frame", {
+        Size = UDim2.fromOffset(size * 0.85, size * 0.5),
+        Position = UDim2.new(0.5, 0, 0, 0),
+        AnchorPoint = Vector2.new(0.5, 0),
+        BackgroundColor3 = color,
+        BorderSizePixel = 0,
+        Parent = holder,
+    })
+    Corner(size * 0.25, top)
+    local bottom = Create("Frame", {
+        Size = UDim2.fromOffset(size * 0.55, size * 0.55),
+        Position = UDim2.new(0.5, 0, 0, size * 0.35),
+        AnchorPoint = Vector2.new(0.5, 0),
+        Rotation = 45,
+        BackgroundColor3 = color,
+        BorderSizePixel = 0,
+        Parent = holder,
+    })
+    Corner(size * 0.1, bottom)
+    return holder, { top, bottom }
+end
+
+LucidUI.IconBuilders.gavel = function(parent, size, color)
+    local holder = IconHolder(parent, size)
+    local thickness = math.max(math.floor(size / 7), 2)
+    local blade = Create("Frame", {
+        Size = UDim2.fromOffset(size * 0.55, size * 0.55),
+        Position = UDim2.new(0.65, 0, 0.35, 0),
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Rotation = 45,
+        BackgroundColor3 = color,
+        BorderSizePixel = 0,
+        Parent = holder,
+    })
+    Corner(2, blade)
+    local handle = Create("Frame", {
+        Size = UDim2.fromOffset(thickness, size * 0.6),
+        Position = UDim2.new(0.3, 0, 0.7, 0),
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Rotation = 45,
+        BackgroundColor3 = color,
+        BorderSizePixel = 0,
+        Parent = holder,
+    })
+    Corner(1, handle)
+    return holder, { blade, handle }
+end
+
+LucidUI.IconBuilders.star = function(parent, size, color)
+    local holder = IconHolder(parent, size)
+    local s = size * 0.85
+    local h = Create("Frame", {
+        Size = UDim2.fromOffset(s, math.max(math.floor(size / 8), 2)),
+        Position = UDim2.fromScale(0.5, 0.5),
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        BackgroundColor3 = color,
+        BorderSizePixel = 0,
+        Parent = holder,
+    })
+    Corner(1, h)
+    local v = Create("Frame", {
+        Size = UDim2.fromOffset(math.max(math.floor(size / 8), 2), s),
+        Position = UDim2.fromScale(0.5, 0.5),
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        BackgroundColor3 = color,
+        BorderSizePixel = 0,
+        Parent = holder,
+    })
+    Corner(1, v)
+    return holder, { h, v }
+end
+
+LucidUI.IconBuilders.coins = function(parent, size, color)
+    local holder = IconHolder(parent, size)
+    local outer = Create("Frame", {
+        Size = UDim2.fromOffset(size * 0.75, size * 0.75),
+        Position = UDim2.fromScale(0.5, 0.5),
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        BackgroundColor3 = color,
+        BorderSizePixel = 0,
+        Parent = holder,
+    })
+    Corner(999, outer)
+    local inner = Create("Frame", {
+        Size = UDim2.fromOffset(size * 0.35, size * 0.35),
+        Position = UDim2.fromScale(0.5, 0.5),
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        BackgroundColor3 = Color3.fromRGB(20, 20, 20),
+        BorderSizePixel = 0,
+        Parent = outer,
+    })
+    Corner(999, inner)
+    return holder, { outer }
+end
+
+LucidUI.IconBuilders.person = function(parent, size, color)
+    local holder = IconHolder(parent, size)
+    local head = Create("Frame", {
+        Size = UDim2.fromOffset(size * 0.4, size * 0.4),
+        Position = UDim2.new(0.5, 0, 0.05, 0),
+        AnchorPoint = Vector2.new(0.5, 0),
+        BackgroundColor3 = color,
+        BorderSizePixel = 0,
+        Parent = holder,
+    })
+    Corner(999, head)
+    local body = Create("Frame", {
+        Size = UDim2.fromOffset(size * 0.75, size * 0.4),
+        Position = UDim2.new(0.5, 0, 0.55, 0),
+        AnchorPoint = Vector2.new(0.5, 0),
+        BackgroundColor3 = color,
+        BorderSizePixel = 0,
+        Parent = holder,
+    })
+    Corner(4, body)
+    return holder, { head, body }
+end
+
+-- Fallback so unknown icon names still render
+LucidUI.IconBuilders.default = LucidUI.IconBuilders.dot
 
 -- ============================================================
 -- Tab class
@@ -27,14 +289,19 @@ function LucidUI.Window:CreateTab(config)
     config = config or {}
 
     local tab = setmetatable({}, LucidUI.Tab)
-    tab.Name        = config.Name or "Tab"
-    tab.Window      = self
-    tab.Sections    = {}
+    tab.Name          = config.Name or "Tab"
+    tab.Window        = self
+    tab.Sections      = {}
     tab._orderCounter = 0
+    tab.IconName      = config.Icon
 
-    -- --------------------------------------------------------
-    -- Button in the tab strip
-    -- --------------------------------------------------------
+    -- Resolve icon builder
+    local builder = tab.IconName and LucidUI.IconBuilders[tab.IconName] or nil
+    if tab.IconName and not builder then
+        builder = LucidUI.IconBuilders.default
+    end
+
+    -- Tab button
     local btn = Create("TextButton", {
         Name = tab.Name,
         Text = "",
@@ -47,6 +314,21 @@ function LucidUI.Window:CreateTab(config)
     })
     Corner(8, btn)
 
+    -- Icon
+    local iconHolder, iconParts = nil, {}
+    local ICON_SIZE = 14
+    local ICON_PAD = 10
+
+    if builder then
+        iconHolder, iconParts = builder(btn, ICON_SIZE, self.Theme.TabInactive)
+        iconHolder.Position = UDim2.fromOffset(ICON_PAD, (30 - ICON_SIZE) / 2)
+        iconHolder.ZIndex = 3
+    end
+
+    -- Label
+    local labelX = builder and (ICON_PAD + ICON_SIZE + 6) or 12
+    local labelW = -(labelX + 12)
+
     local labelLbl = Create("TextLabel", {
         Text = tab.Name,
         Font = Enum.Font.GothamMedium,
@@ -54,18 +336,18 @@ function LucidUI.Window:CreateTab(config)
         TextColor3 = self.Theme.TabInactive,
         BackgroundTransparency = 1,
         TextXAlignment = Enum.TextXAlignment.Center,
-        Position = UDim2.fromOffset(12, 0),
-        Size = UDim2.new(1, -24, 1, 0),
-        ZIndex = 2,
+        Position = UDim2.fromOffset(labelX, 0),
+        Size = UDim2.new(1, labelW, 1, 0),
+        ZIndex = 3,
         Parent = btn,
     })
 
-    -- Size the button to fit its text
     local ts = TextService:GetTextSize(tab.Name, 13, Enum.Font.GothamMedium, Vector2.new(1000, 30))
-    btn.Size = UDim2.fromOffset(ts.X + 24, 30)
+    btn.Size = UDim2.fromOffset(ts.X + (labelX + 12), 30)
 
-    tab.Button = btn
-    tab.Label  = labelLbl
+    tab.Button    = btn
+    tab.Label     = labelLbl
+    tab.IconParts = iconParts
 
     btn.MouseEnter:Connect(function()
         if tab == self.ActiveTab then return end
@@ -76,9 +358,7 @@ function LucidUI.Window:CreateTab(config)
         Tween(btn, 0.15, { BackgroundTransparency = 1 }):Play()
     end)
 
-    -- --------------------------------------------------------
     -- Page
-    -- --------------------------------------------------------
     local page = Create("ScrollingFrame", {
         Name = tab.Name .. "Page",
         Size = UDim2.fromScale(1, 1),
@@ -105,6 +385,16 @@ function LucidUI.Window:CreateTab(config)
     })
     tab.Page = page
 
+    -- Theme callback: recolor button label and icon parts
+    self:_registerTheme(function(t)
+        local active = (tab == self.ActiveTab)
+        local c = active and t.TabActive or t.TabInactive
+        labelLbl.TextColor3 = c
+        for _, p in ipairs(iconParts) do
+            p.BackgroundColor3 = c
+        end
+    end)
+
     btn.MouseButton1Click:Connect(function()
         self:SelectTab(tab)
     end)
@@ -117,22 +407,23 @@ function LucidUI.Window:CreateTab(config)
     return tab
 end
 
--- ============================================================
--- Select tab
--- ============================================================
 function LucidUI.Window:SelectTab(tab)
     for _, t in ipairs(self.Tabs) do
         local active = (t == tab)
         t.Page.Visible = active
 
-        local tc = active and self.Theme.TabActive or self.Theme.TabInactive
+        local c = active and self.Theme.TabActive or self.Theme.TabInactive
 
         Tween(t.Button, 0.18, {
             BackgroundTransparency = active and 0.20 or 1,
         }):Play()
         Tween(t.Label, 0.18, {
-            TextColor3 = tc,
+            TextColor3 = c,
         }):Play()
+
+        for _, p in ipairs(t.IconParts or {}) do
+            Tween(p, 0.18, { BackgroundColor3 = c }):Play()
+        end
 
         if active then
             t.Page.Position = UDim2.fromOffset(8, 0)
@@ -163,13 +454,10 @@ function LucidUI.Tab:CreateSection(nameOrConfig)
 
     section._order      = self._orderCounter * 1000
     section._elemOrder  = section._order
-    section._targetHeight = 0
 
     self._orderCounter = self._orderCounter + 1
 
-    -- --------------------------------------------------------
     -- Header
-    -- --------------------------------------------------------
     if section.Name ~= "" then
         local headerBtn = Create("TextButton", {
             Text = "",
@@ -230,9 +518,7 @@ function LucidUI.Tab:CreateSection(nameOrConfig)
         end)
     end
 
-    -- --------------------------------------------------------
-    -- Wrapper (owns the animated height)
-    -- --------------------------------------------------------
+    -- Wrapper owns the animated height
     local wrapper = Create("Frame", {
         Name = "Wrapper",
         Size = UDim2.new(1, 0, 0, 0),
@@ -243,9 +529,7 @@ function LucidUI.Tab:CreateSection(nameOrConfig)
         Parent = self.Page,
     })
 
-    -- --------------------------------------------------------
-    -- Container (auto-sizes to its children)
-    -- --------------------------------------------------------
+    -- Container fits its children
     local container = Create("Frame", {
         Name = "Container",
         Size = UDim2.new(1, 0, 0, 0),
@@ -263,18 +547,19 @@ function LucidUI.Tab:CreateSection(nameOrConfig)
     section.Wrapper   = wrapper
     section.Container = container
 
-    -- --------------------------------------------------------
-    -- Measure after layout settles, then snap the wrapper to fit
-    -- --------------------------------------------------------
+    -- After layout settles, set the correct initial height
     task.spawn(function()
         task.wait()
         task.wait()
         if not wrapper.Parent then return end
 
-        local h = section:_measureHeight()
-        section._targetHeight = h
-
-        wrapper.Size = UDim2.new(1, 0, 0, section.Expanded and h or 0)
+        if section.Expanded then
+            -- Wrapper auto-sizes while expanded and stable
+            wrapper.AutomaticSize = Enum.AutomaticSize.Y
+        else
+            wrapper.AutomaticSize = Enum.AutomaticSize.None
+            wrapper.Size = UDim2.new(1, 0, 0, 0)
+        end
     end)
 
     table.insert(self.Sections, section)
@@ -282,65 +567,91 @@ function LucidUI.Tab:CreateSection(nameOrConfig)
 end
 
 -- ============================================================
--- Deterministic height measurement
+-- Deterministic height — read the container directly
 -- ============================================================
 function LucidUI.Section:_measureHeight()
-    local total, count = 0, 0
-
-    for _, child in ipairs(self.Container:GetChildren()) do
-        if child:IsA("GuiObject") and child.Visible then
-            total = total + child.Size.Y.Offset
-            count = count + 1
+    -- Container has AutomaticSize.Y, so Size.Y.Offset is the true content height
+    -- (including inter-child list padding). This works even for elements
+    -- that use AutomaticSize.Y themselves (TextDisplay, expanded dropdowns).
+    local h = self.Container.Size.Y.Offset
+    if h <= 0 then
+        -- Fallback: sum children offsets for the first frame
+        local total, count = 0, 0
+        for _, child in ipairs(self.Container:GetChildren()) do
+            if child:IsA("GuiObject") and child.Visible then
+                total = total + child.Size.Y.Offset
+                count = count + 1
+            end
         end
+        if count > 1 then total = total + (count - 1) * 8 end
+        return total
     end
-
-    -- Add the list padding between items (8px)
-    if count > 1 then
-        total = total + (count - 1) * 8
-    end
-
-    return total
+    return h
 end
 
--- ============================================================
--- Element order counter
--- ============================================================
 function LucidUI.Section:_nextOrder()
     self._elemOrder = self._elemOrder + 1
     return self._elemOrder
 end
 
--- ============================================================
--- Attach an element to the container
--- ============================================================
 function LucidUI.Section:_track(frame)
     frame.Parent = self.Container
     return frame
 end
 
 -- ============================================================
--- Expand / collapse
+-- Expand / collapse — smooth tween + auto-size at rest
 -- ============================================================
 function LucidUI.Section:SetExpanded(state, instant)
     if state == self.Expanded and not instant then return end
 
     self.Expanded = state
-
     if self.Arrow then
         self.Arrow.Text = state and "v" or ">"
     end
 
-    local target = self:_measureHeight()
-    self._targetHeight = target
-
+    -- Snap (no animation)
     if instant or not self.Collapsible then
-        self.Wrapper.Size = UDim2.new(1, 0, 0, state and target or 0)
+        if state then
+            self.Wrapper.AutomaticSize = Enum.AutomaticSize.Y
+        else
+            self.Wrapper.AutomaticSize = Enum.AutomaticSize.None
+            self.Wrapper.Size = UDim2.new(1, 0, 0, 0)
+        end
         return
     end
 
-    TweenService:Create(
-        self.Wrapper,
-        state and Ease.Out(0.30) or Ease.In(0.28),
-        { Size = UDim2.new(1, 0, 0, state and target or 0) }
-    ):Play()
+    if state then
+        -- EXPAND: freeze current size, tween up to container height, then re-enable AutoSize
+        local target = self:_measureHeight()
+        if target <= 0 then target = 1 end
+
+        self.Wrapper.AutomaticSize = Enum.AutomaticSize.None
+        self.Wrapper.Size = UDim2.new(1, 0, 0, 0)
+
+        local t = TweenService:Create(self.Wrapper, Ease.Out(0.30), {
+            Size = UDim2.new(1, 0, 0, target),
+        })
+        t:Play()
+        t.Completed:Connect(function()
+            if self.Expanded then
+                self.Wrapper.AutomaticSize = Enum.AutomaticSize.Y
+            end
+        end)
+    else
+        -- COLLAPSE: freeze current height, tween to 0, keep AutoSize off
+        local current
+        if self.Wrapper.AutomaticSize == Enum.AutomaticSize.Y then
+            current = self.Container.Size.Y.Offset
+        else
+            current = self.Wrapper.Size.Y.Offset
+        end
+
+        self.Wrapper.AutomaticSize = Enum.AutomaticSize.None
+        self.Wrapper.Size = UDim2.new(1, 0, 0, current)
+
+        TweenService:Create(self.Wrapper, Ease.In(0.28), {
+            Size = UDim2.new(1, 0, 0, 0),
+        }):Play()
+    end
 end
