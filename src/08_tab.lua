@@ -604,53 +604,59 @@ end
 -- ============================================================
 function LucidUI.Section:SetExpanded(state, instant)
     if state == self.Expanded and not instant then return end
-
     self.Expanded = state
-    if self.Arrow then
-        self.Arrow.Text = state and "v" or ">"
-    end
+    if self.Arrow then self.Arrow.Text = state and "v" or ">" end
 
-    -- Snap (no animation)
+    local wrapper   = self.Wrapper
+    local container = self.Container
+
+    -- Snap, no animation
     if instant or not self.Collapsible then
         if state then
-            self.Wrapper.AutomaticSize = Enum.AutomaticSize.Y
+            wrapper.AutomaticSize = Enum.AutomaticSize.Y
         else
-            self.Wrapper.AutomaticSize = Enum.AutomaticSize.None
-            self.Wrapper.Size = UDim2.new(1, 0, 0, 0)
+            wrapper.AutomaticSize = Enum.AutomaticSize.None
+            wrapper.Size = UDim2.new(1, 0, 0, 0)
         end
         return
     end
 
+    -- Capture the current visual height FIRST, before touching anything
+    local currentHeight
+    if wrapper.AutomaticSize == Enum.AutomaticSize.Y then
+        currentHeight = container.Size.Y.Offset
+    else
+        currentHeight = wrapper.Size.Y.Offset
+    end
+    if currentHeight <= 0 then
+        -- Fallback in case layout hasn't settled yet
+        currentHeight = container.Size.Y.Offset
+        if currentHeight <= 0 then currentHeight = 1 end
+    end
+
     if state then
-        -- EXPAND: freeze current size, tween up to container height, then re-enable AutoSize
-        local target = self:_measureHeight()
+        -- EXPAND: start from 0, tween to measured height, then hand off to AutoSize
+        wrapper.AutomaticSize = Enum.AutomaticSize.None
+        wrapper.Size = UDim2.new(1, 0, 0, 0)
+
+        local target = container.Size.Y.Offset
         if target <= 0 then target = 1 end
 
-        self.Wrapper.AutomaticSize = Enum.AutomaticSize.None
-        self.Wrapper.Size = UDim2.new(1, 0, 0, 0)
-
-        local t = TweenService:Create(self.Wrapper, Ease.Out(0.30), {
+        local tween = TweenService:Create(wrapper, Ease.Out(0.30), {
             Size = UDim2.new(1, 0, 0, target),
         })
-        t:Play()
-        t.Completed:Connect(function()
+        tween:Play()
+        tween.Completed:Connect(function()
             if self.Expanded then
-                self.Wrapper.AutomaticSize = Enum.AutomaticSize.Y
+                wrapper.AutomaticSize = Enum.AutomaticSize.Y
             end
         end)
     else
-        -- COLLAPSE: freeze current height, tween to 0, keep AutoSize off
-        local current
-        if self.Wrapper.AutomaticSize == Enum.AutomaticSize.Y then
-            current = self.Container.Size.Y.Offset
-        else
-            current = self.Wrapper.Size.Y.Offset
-        end
+        -- COLLAPSE: lock to current height, tween down
+        wrapper.AutomaticSize = Enum.AutomaticSize.None
+        wrapper.Size = UDim2.new(1, 0, 0, currentHeight)
 
-        self.Wrapper.AutomaticSize = Enum.AutomaticSize.None
-        self.Wrapper.Size = UDim2.new(1, 0, 0, current)
-
-        TweenService:Create(self.Wrapper, Ease.In(0.28), {
+        TweenService:Create(wrapper, Ease.In(0.28), {
             Size = UDim2.new(1, 0, 0, 0),
         }):Play()
     end
