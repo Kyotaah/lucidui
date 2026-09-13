@@ -1,25 +1,7 @@
 --[[
     Tab + Section — layout containers plus frame-based tab icons.
-
-    Tab:
-      • Pill button with an optional icon on the left
-      • Full-size ScrollingFrame page shown when active
-      • Theme callback updates label + icon colors together
-
-    Section:
-      • Collapsible header with ASCII chevron (v / >)
-      • Wrapper owns the animated height; container holds elements
-      • When expanded and stable, the wrapper has AutomaticSize.Y
-        so it grows with dynamic content (Live Status, rebuilt lists)
-      • During transitions, AutomaticSize is disabled and the
-        wrapper tweens to a fixed height for a smooth animation
 ]]
 
--- ============================================================
--- Icon builders
--- Every icon is drawn with Frames only. Returns: holder, parts
--- where parts is an array of Frames that get recolored on theme
--- ============================================================
 local function IconHolder(parent, size)
     return Create("Frame", {
         Size = UDim2.fromOffset(size, size),
@@ -48,10 +30,9 @@ LucidUI.IconBuilders.bars = function(parent, size, color)
     local holder = IconHolder(parent, size)
     local parts = {}
     for i = 1, 3 do
-        local y = 0.2 + (i - 1) * 0.3
         local line = Create("Frame", {
             Size = UDim2.fromOffset(size * 0.75, math.max(math.floor(size / 7), 2)),
-            Position = UDim2.new(0.5, 0, y, 0),
+            Position = UDim2.new(0.5, 0, 0.2 + (i - 1) * 0.3, 0),
             AnchorPoint = Vector2.new(0.5, 0.5),
             BackgroundColor3 = color,
             BorderSizePixel = 0,
@@ -276,12 +257,8 @@ LucidUI.IconBuilders.person = function(parent, size, color)
     return holder, { head, body }
 end
 
--- Fallback so unknown icon names still render
 LucidUI.IconBuilders.default = LucidUI.IconBuilders.dot
 
--- ============================================================
--- Tab class
--- ============================================================
 LucidUI.Tab = {}
 LucidUI.Tab.__index = LucidUI.Tab
 
@@ -295,13 +272,11 @@ function LucidUI.Window:CreateTab(config)
     tab._orderCounter = 0
     tab.IconName      = config.Icon
 
-    -- Resolve icon builder
     local builder = tab.IconName and LucidUI.IconBuilders[tab.IconName] or nil
     if tab.IconName and not builder then
         builder = LucidUI.IconBuilders.default
     end
 
-    -- Tab button
     local btn = Create("TextButton", {
         Name = tab.Name,
         Text = "",
@@ -314,7 +289,6 @@ function LucidUI.Window:CreateTab(config)
     })
     Corner(8, btn)
 
-    -- Icon
     local iconHolder, iconParts = nil, {}
     local ICON_SIZE = 14
     local ICON_PAD = 10
@@ -325,7 +299,6 @@ function LucidUI.Window:CreateTab(config)
         iconHolder.ZIndex = 3
     end
 
-    -- Label
     local labelX = builder and (ICON_PAD + ICON_SIZE + 6) or 12
     local labelW = -(labelX + 12)
 
@@ -358,7 +331,6 @@ function LucidUI.Window:CreateTab(config)
         Tween(btn, 0.15, { BackgroundTransparency = 1 }):Play()
     end)
 
-    -- Page
     local page = Create("ScrollingFrame", {
         Name = tab.Name .. "Page",
         Size = UDim2.fromScale(1, 1),
@@ -385,7 +357,6 @@ function LucidUI.Window:CreateTab(config)
     })
     tab.Page = page
 
-    -- Theme callback: recolor button label and icon parts
     self:_registerTheme(function(t)
         local active = (tab == self.ActiveTab)
         local c = active and t.TabActive or t.TabInactive
@@ -414,18 +385,19 @@ function LucidUI.Window:SelectTab(tab)
 
         local c = active and self.Theme.TabActive or self.Theme.TabInactive
 
-        Tween(t.Button, 0.18, {
-            BackgroundTransparency = active and 0.20 or 1,
-        }):Play()
-        Tween(t.Label, 0.18, {
-            TextColor3 = c,
-        }):Play()
+        Tween(t.Button, 0.18, { BackgroundTransparency = active and 0.20 or 1 }):Play()
+        Tween(t.Label, 0.18, { TextColor3 = c }):Play()
 
         for _, p in ipairs(t.IconParts or {}) do
             Tween(p, 0.18, { BackgroundColor3 = c }):Play()
         end
 
         if active then
+            for _, section in ipairs(t.Sections or {}) do
+                if section.Expanded then
+                    section.Wrapper.AutomaticSize = Enum.AutomaticSize.Y
+                end
+            end
             t.Page.Position = UDim2.fromOffset(8, 0)
             Tween(t.Page, 0.20, { Position = UDim2.fromOffset(0, 0) }):Play()
         end
@@ -434,9 +406,6 @@ function LucidUI.Window:SelectTab(tab)
     self.ActiveTab = tab
 end
 
--- ============================================================
--- Section class
--- ============================================================
 LucidUI.Section = {}
 LucidUI.Section.__index = LucidUI.Section
 
@@ -446,18 +415,14 @@ function LucidUI.Tab:CreateSection(nameOrConfig)
         or { Name = nameOrConfig }
 
     local section = setmetatable({}, LucidUI.Section)
-
     section.Name        = cfg.Name or ""
     section.Tab         = self
     section.Collapsible = cfg.Collapsible ~= false
     section.Expanded    = cfg.StartExpanded ~= false
-
     section._order      = self._orderCounter * 1000
     section._elemOrder  = section._order
-
     self._orderCounter = self._orderCounter + 1
 
-    -- Header
     if section.Name ~= "" then
         local headerBtn = Create("TextButton", {
             Text = "",
@@ -518,7 +483,6 @@ function LucidUI.Tab:CreateSection(nameOrConfig)
         end)
     end
 
-    -- Wrapper owns the animated height
     local wrapper = Create("Frame", {
         Name = "Wrapper",
         Size = UDim2.new(1, 0, 0, 0),
@@ -529,7 +493,6 @@ function LucidUI.Tab:CreateSection(nameOrConfig)
         Parent = self.Page,
     })
 
-    -- Container fits its children
     local container = Create("Frame", {
         Name = "Container",
         Size = UDim2.new(1, 0, 0, 0),
@@ -547,14 +510,11 @@ function LucidUI.Tab:CreateSection(nameOrConfig)
     section.Wrapper   = wrapper
     section.Container = container
 
-    -- After layout settles, set the correct initial height
     task.spawn(function()
         task.wait()
         task.wait()
         if not wrapper.Parent then return end
-
         if section.Expanded then
-            -- Wrapper auto-sizes while expanded and stable
             wrapper.AutomaticSize = Enum.AutomaticSize.Y
         else
             wrapper.AutomaticSize = Enum.AutomaticSize.None
@@ -566,27 +526,23 @@ function LucidUI.Tab:CreateSection(nameOrConfig)
     return section
 end
 
--- ============================================================
--- Deterministic height — read the container directly
--- ============================================================
 function LucidUI.Section:_measureHeight()
-    -- Container has AutomaticSize.Y, so Size.Y.Offset is the true content height
-    -- (including inter-child list padding). This works even for elements
-    -- that use AutomaticSize.Y themselves (TextDisplay, expanded dropdowns).
-    local h = self.Container.Size.Y.Offset
-    if h <= 0 then
-        -- Fallback: sum children offsets for the first frame
-        local total, count = 0, 0
-        for _, child in ipairs(self.Container:GetChildren()) do
-            if child:IsA("GuiObject") and child.Visible then
-                total = total + child.Size.Y.Offset
-                count = count + 1
-            end
-        end
-        if count > 1 then total = total + (count - 1) * 8 end
-        return total
+    local layout = self.Container:FindFirstChildOfClass("UIListLayout")
+    if layout then
+        local h = layout.AbsoluteContentSize.Y
+        if h > 0 then return h end
     end
-    return h
+    local h = self.Container.Size.Y.Offset
+    if h > 0 then return h end
+    local total, count = 0, 0
+    for _, child in ipairs(self.Container:GetChildren()) do
+        if child:IsA("GuiObject") and child.Visible then
+            total = total + child.Size.Y.Offset
+            count = count + 1
+        end
+    end
+    if count > 1 then total = total + (count - 1) * 8 end
+    return total
 end
 
 function LucidUI.Section:_nextOrder()
@@ -599,9 +555,6 @@ function LucidUI.Section:_track(frame)
     return frame
 end
 
--- ============================================================
--- Expand / collapse — smooth tween + auto-size at rest
--- ============================================================
 function LucidUI.Section:SetExpanded(state, instant)
     if state == self.Expanded and not instant then return end
     self.Expanded = state
@@ -610,54 +563,47 @@ function LucidUI.Section:SetExpanded(state, instant)
     local wrapper   = self.Wrapper
     local container = self.Container
 
-    -- Snap, no animation
+    local target = self:_measureHeight()
+    if target <= 0 then target = 1 end
+
     if instant or not self.Collapsible then
+        wrapper.AutomaticSize = Enum.AutomaticSize.None
         if state then
-            wrapper.AutomaticSize = Enum.AutomaticSize.Y
+            wrapper.Size = UDim2.new(1, 0, 0, target)
         else
-            wrapper.AutomaticSize = Enum.AutomaticSize.None
             wrapper.Size = UDim2.new(1, 0, 0, 0)
         end
         return
     end
 
-    -- Capture the current visual height FIRST, before touching anything
-    local currentHeight
-    if wrapper.AutomaticSize == Enum.AutomaticSize.Y then
-        currentHeight = container.Size.Y.Offset
-    else
-        currentHeight = wrapper.Size.Y.Offset
-    end
-    if currentHeight <= 0 then
-        -- Fallback in case layout hasn't settled yet
-        currentHeight = container.Size.Y.Offset
-        if currentHeight <= 0 then currentHeight = 1 end
+    container.AutomaticSize = Enum.AutomaticSize.None
+    container.Size = UDim2.new(1, 0, 0, target)
+    wrapper.AutomaticSize = Enum.AutomaticSize.None
+
+    local function finalize()
+        container.AutomaticSize = Enum.AutomaticSize.Y
+        if self.Expanded then
+            wrapper.AutomaticSize = Enum.AutomaticSize.Y
+        end
     end
 
     if state then
-        -- EXPAND: start from 0, tween to measured height, then hand off to AutoSize
-        wrapper.AutomaticSize = Enum.AutomaticSize.None
         wrapper.Size = UDim2.new(1, 0, 0, 0)
-
-        local target = container.Size.Y.Offset
-        if target <= 0 then target = 1 end
-
-        local tween = TweenService:Create(wrapper, Ease.Out(0.30), {
+        local tween = TweenService:Create(wrapper, Ease.Out(0.35), {
             Size = UDim2.new(1, 0, 0, target),
         })
         tween:Play()
         tween.Completed:Connect(function()
-            if self.Expanded then
-                wrapper.AutomaticSize = Enum.AutomaticSize.Y
-            end
+            if self.Expanded then finalize() end
         end)
     else
-        -- COLLAPSE: lock to current height, tween down
-        wrapper.AutomaticSize = Enum.AutomaticSize.None
-        wrapper.Size = UDim2.new(1, 0, 0, currentHeight)
-
-        TweenService:Create(wrapper, Ease.In(0.28), {
+        wrapper.Size = UDim2.new(1, 0, 0, target)
+        local tween = TweenService:Create(wrapper, Ease.In(0.30), {
             Size = UDim2.new(1, 0, 0, 0),
-        }):Play()
+        })
+        tween:Play()
+        tween.Completed:Connect(function()
+            if not self.Expanded then finalize() end
+        end)
     end
 end
