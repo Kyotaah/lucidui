@@ -276,6 +276,6 @@ MIT — see [LICENSE](./LICENSE). Do whatever you want with it.
 
 ## Credits
 
-Built by **Kyo** ([@Kyootah]([https://github.com/Kyotaah])).
+Built by **Kyo** ([@Kyootah](https://github.com/Kyotaah)).
 
 The glass aesthetic was inspired by Apple's UI language, the config system by Nova UI, and the general "just work on every executor" goal by every UI library that ever broke on us.
