@@ -837,3 +837,5 @@ getgenv().LucidUI_ActiveWindows = LucidUI._windows
 getgenv().LucidUI = LucidUI
 
 print("[LucidUI] v" .. LucidUI._version .. " loaded")
+
+return LucidUI
