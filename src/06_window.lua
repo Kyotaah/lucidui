@@ -838,9 +838,11 @@ function LucidUI.Window:SetAccent(c)
 
     for _, fn in ipairs(self._themeElements) do pcall(fn, self.Theme) end
 
-    if self._pillStroke then self._pillStroke.Color = c end
-    if self._pillDot    then self._pillDot.BackgroundColor3 = c end
-end
+    if self._iconRefs then
+        -- Removed: don't recolor minimize/close on theme change
+        -- self._iconRefs.minimize.label.TextColor3 = t.TextSecondary
+        -- self._iconRefs.close.label.TextColor3    = t.TextSecondary
+    end
 
 function LucidUI.Window:_registerTheme(fn)
     table.insert(self._themeElements, fn)
