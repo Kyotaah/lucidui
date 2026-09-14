@@ -789,6 +789,16 @@ function LucidUI.Window:SetBackgroundImage(url)
 end
 
 function LucidUI.Window:_downloadAndLoadImage(url)
+    print("[LucidUI] Starting image download:", url)
+    if not Compat.hasCustomAsset() then
+        print("[LucidUI] FAIL: getcustomasset not available")
+        return false
+    end
+    if not Compat.hasFS() then
+        print("[LucidUI] FAIL: writefile not available")
+        return false
+    end
+    print("[LucidUI] Executor supports both, downloading...")
     if not Compat.hasCustomAsset() then warn("[LucidUI] getcustomasset not available") return false end
     if not Compat.hasFS() then warn("[LucidUI] writefile not available") return false end
     local ext = url:match("%.(%w+)%?") or url:match("%.(%w+)$") or "png"
@@ -806,6 +816,7 @@ function LucidUI.Window:_downloadAndLoadImage(url)
     self._bgImage.ImageTransparency = 1
     Tween(self._bgImage, 0.4, { ImageTransparency = 0.10 }):Play()
     Tween(self.Main, 0.4, { BackgroundTransparency = 0.65 }):Play()
+        print("[LucidUI] Image applied successfully")
     return true
 end
 
