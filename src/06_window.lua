@@ -676,9 +676,8 @@ function LucidUI.Window:ToggleSettings(state)
         TweenService:Create(self.SettingsPanel, Ease.Out(0.38), { Position = SHOWN }):Play()
         TweenService:Create(self.SettingsPanel, Ease.FadeIn(0.32), { GroupTransparency = 0 }):Play()
 
-        if self._themeSlotsRefresh      then pcall(self._themeSlotsRefresh) end
-        if self._savedThemeSlotsRefresh then pcall(self._savedThemeSlotsRefresh) end
-        if self._themeDropdownRefresh   then pcall(self._themeDropdownRefresh) end
+                if self._themeSlotsRefresh      then pcall(self._themeSlotsRefresh) end
+                if self._themeDropdownRefresh   then pcall(self._themeDropdownRefresh) end
     else
         local slide = TweenService:Create(self.SettingsPanel, Ease.In(0.26), { Position = HIDDEN })
         slide:Play()
