@@ -1,12 +1,5 @@
 --[[
     Tab + Section — layout containers plus frame-based tab icons.
-
-    Available icon names:
-      dot, bars, diamond, cross, plus, check, shield, gavel, star, coins,
-      person, eye, lock, unlock, play, pause, stop, bell, home, settings,
-      sword, target, flame, crown, zap
-
-    Any unknown name falls back to "dot".
 ]]
 
 local function IconHolder(parent, size)
@@ -839,6 +832,7 @@ function LucidUI.Tab:CreateSection(nameOrConfig)
     section.Expanded    = cfg.StartExpanded ~= false
     section._order      = self._orderCounter * 1000
     section._elemOrder  = section._order
+    section._cachedH    = 0
     self._orderCounter = self._orderCounter + 1
 
     if section.Name ~= "" then
@@ -933,9 +927,6 @@ function LucidUI.Tab:CreateSection(nameOrConfig)
         if not wrapper.Parent then return end
         if section.Expanded then
             wrapper.AutomaticSize = Enum.AutomaticSize.Y
-        else
-            wrapper.AutomaticSize = Enum.AutomaticSize.None
-            wrapper.Size = UDim2.new(1, 0, 0, 0)
         end
     end)
 
@@ -961,48 +952,53 @@ function LucidUI.Section:SetExpanded(state, instant)
     local wrapper   = self.Wrapper
     local container = self.Container
 
+    -- Read the true content height from the container
     local layout = container:FindFirstChildOfClass("UIListLayout")
-    local contentH = 0
-    if layout then contentH = layout.AbsoluteContentSize.Y end
-    if contentH <= 0 then contentH = container.Size.Y.Offset end
-    if contentH <= 0 then
+    local target = 0
+    if layout then target = layout.AbsoluteContentSize.Y end
+    if target <= 0 then target = container.Size.Y.Offset end
+    if target <= 0 then
         for _, child in ipairs(container:GetChildren()) do
             if child:IsA("GuiObject") and child.Visible then
-                contentH = contentH + child.Size.Y.Offset
+                target = target + child.Size.Y.Offset
             end
         end
     end
-    if contentH <= 0 then contentH = 40 end
+    if target <= 0 then target = 40 end
+
+    self._cachedH = target
+
+    -- Cache the container's own size and freeze it during the tween
+    container.AutomaticSize = Enum.AutomaticSize.None
+    container.Size = UDim2.new(1, 0, 0, target)
 
     if instant then
         wrapper.AutomaticSize = Enum.AutomaticSize.None
-        if state then
-            wrapper.Size = UDim2.new(1, 0, 0, contentH)
-            wrapper.AutomaticSize = Enum.AutomaticSize.Y
-        else
-            wrapper.Size = UDim2.new(1, 0, 0, 0)
-        end
+        wrapper.Size = UDim2.new(1, 0, 0, state and target or 0)
+        container.AutomaticSize = Enum.AutomaticSize.Y
+        if state then wrapper.AutomaticSize = Enum.AutomaticSize.Y end
         return
     end
 
-    container.AutomaticSize = Enum.AutomaticSize.None
-    container.Size = UDim2.new(1, 0, 0, contentH)
     wrapper.AutomaticSize = Enum.AutomaticSize.None
 
+    -- Set starting point
     if state then
         wrapper.Size = UDim2.new(1, 0, 0, 0)
     else
-        wrapper.Size = UDim2.new(1, 0, 0, contentH)
+        wrapper.Size = UDim2.new(1, 0, 0, target)
     end
 
-    local targetH = state and contentH or 0
-    local t = TweenService:Create(wrapper,
-        TweenInfo.new(0.35, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
-        { Size = UDim2.new(1, 0, 0, targetH) }
-    )
-    t:Play()
+    local goalH = state and target or 0
 
-    t.Completed:Connect(function()
+    -- Same easing + duration as dropdowns
+    TweenService:Create(
+        wrapper,
+        TweenInfo.new(0.22, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+        { Size = UDim2.new(1, 0, 0, goalH) }
+    ):Play()
+
+    task.delay(0.24, function()
         container.AutomaticSize = Enum.AutomaticSize.Y
         if self.Expanded then
             wrapper.AutomaticSize = Enum.AutomaticSize.Y
