@@ -535,9 +535,8 @@ function LucidUI.Section:CreateKeybind(config)
     local win, theme = self.Tab.Window, self.Tab.Window.Theme
 
     local currentKey = config.CurrentKeybind or Enum.KeyCode.F
-    local listening  = false
-    local listenAt   = 0
-    local flag       = config.Flag
+    local flag = config.Flag
+    local listenConn = nil
 
     local row = Create("Frame", {
         BackgroundColor3 = theme.Surface,
@@ -576,44 +575,49 @@ function LucidUI.Section:CreateKeybind(config)
     })
     Corner(8, keyBox)
 
-    local function beginListen()
-        listening = true
-        listenAt  = tick()
+    local function stopListening()
+        if listenConn then
+            listenConn:Disconnect()
+            listenConn = nil
+        end
+        keyBox.Text = currentKey.Name
+        keyBox.BackgroundColor3 = theme.Background
+        LucidUI._keyListening = false
+    end
+
+    local function startListening()
+        if LucidUI._keyListening then return end
+        LucidUI._keyListening = true
         keyBox.Text = "..."
         keyBox.BackgroundColor3 = theme.Accent
         PlayUISound("click")
-    end
 
-    keyBox.MouseButton1Click:Connect(beginListen)
-    keyBox.TouchTap:Connect(beginListen)
-
-    table.insert(win._conns, UserInputService.InputBegan:Connect(function(input, processed)
-        if not listening then return end
-
-        -- Ignore the click/tap that started listening
-        if tick() - listenAt < 0.25 then return end
-
-        if input.UserInputType == Enum.UserInputType.Keyboard then
+        listenConn = UserInputService.InputBegan:Connect(function(input)
+            if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
             currentKey = input.KeyCode
-            keyBox.Text = currentKey.Name
-            keyBox.BackgroundColor3 = theme.Background
-            listening = false
             if flag then win._configData[flag] = currentKey.Name end
             if config.Callback then pcall(config.Callback, currentKey) end
-        elseif input.UserInputType == Enum.UserInputType.Touch
+            stopListening()
+        end)
+    end
+
+    keyBox.MouseButton1Click:Connect(startListening)
+
+    -- Cancel on tap-elsewhere
+    table.insert(win._conns, UserInputService.InputBegan:Connect(function(input, processed)
+        if not LucidUI._keyListening then return end
+        if input.UserInputType == Enum.UserInputType.Touch
             or input.UserInputType == Enum.UserInputType.MouseButton1 then
-            keyBox.Text = currentKey.Name
-            keyBox.BackgroundColor3 = theme.Background
-            listening = false
+            stopListening()
         end
     end))
 
     win:_registerTheme(function(t)
         row.BackgroundColor3 = t.Surface
         nameLabel.TextColor3 = t.TextPrimary
-        if not listening then
+        if not LucidUI._keyListening then
             keyBox.BackgroundColor3 = t.Background
-            keyBox.TextColor3       = t.TextPrimary
+            keyBox.TextColor3 = t.TextPrimary
         end
     end)
 
