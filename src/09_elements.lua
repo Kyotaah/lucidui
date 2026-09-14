@@ -1,6 +1,58 @@
 --[[
-    Elements — interactive widgets for sections.
+    Elements — interactive widgets with safe click handling.
+
+    AttachSafeClick only fires the callback when:
+      • The press STARTED on this element, AND
+      • The pointer is still inside when released.
+
+    This prevents the "press A, drag to B, release → B fires" bug
+    that GuiButton.MouseButton1Click causes on both mouse and touch.
 ]]
+
+local function AttachSafeClick(element, callback)
+    local isPressed = false
+    local inside    = false
+
+    element.InputBegan:Connect(function(input)
+        if input.UserInputType ~= Enum.UserInputType.MouseButton1
+            and input.UserInputType ~= Enum.UserInputType.Touch then return end
+
+        if LucidUI._pressOwner and LucidUI._pressOwner ~= element then return end
+
+        if not LucidUI._pressOwner then
+            LucidUI._pressOwner = element
+            inside = true
+        end
+        isPressed = true
+    end)
+
+    element.MouseLeave:Connect(function()
+        inside = false
+    end)
+
+    element.MouseEnter:Connect(function()
+        if isPressed and LucidUI._pressOwner == element then
+            inside = true
+        end
+    end)
+
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType ~= Enum.UserInputType.MouseButton1
+            and input.UserInputType ~= Enum.UserInputType.Touch then return end
+
+        if LucidUI._pressOwner == element then
+            LucidUI._pressOwner = nil
+            if isPressed and inside and callback then
+                pcall(callback)
+            end
+            isPressed = false
+            inside = false
+        elseif isPressed then
+            isPressed = false
+            inside = false
+        end
+    end)
+end
 
 -- ============================================================
 -- Button
@@ -36,8 +88,10 @@ function LucidUI.Section:CreateButton(config)
     AttachRipple(btn)
     AttachHoverGlow(btn, theme.Accent)
     AttachHoverSound(btn)
-
-    local pressedInside = false
+    AttachSafeClick(btn, function()
+        PlayUISound("click")
+        if config.Callback then pcall(config.Callback) end
+    end)
 
     btn.MouseEnter:Connect(function()
         Tween(btn, 0.15, {
@@ -49,31 +103,20 @@ function LucidUI.Section:CreateButton(config)
         Tween(btn, 0.15, {
             BackgroundColor3 = theme.Surface,
             BackgroundTransparency = theme.SurfaceTrans,
+            Size = UDim2.new(1, 0, 0, 36),
         }):Play()
     end)
-    btn.MouseButton1Down:Connect(function()
-        pressedInside = true
-        Tween(btn, 0.08, { Size = UDim2.new(0.97, 0, 0, 34) }):Play()
-    end)
-    btn.MouseButton1Up:Connect(function()
-        Tween(btn, 0.15, { Size = UDim2.new(1, 0, 0, 36) }):Play()
-
-        if not pressedInside then return end
-        pressedInside = false
-
-        local mouse = UserInputService:GetMouseLocation()
-        local abs   = btn.AbsolutePosition
-        local size  = btn.AbsoluteSize
-        local inside = mouse.X >= abs.X and mouse.X <= abs.X + size.X
-                   and mouse.Y >= abs.Y and mouse.Y <= abs.Y + size.Y
-
-        if inside then
-            PlayUISound("click")
-            if config.Callback then pcall(config.Callback) end
+    btn.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
+            Tween(btn, 0.08, { Size = UDim2.new(0.97, 0, 0, 34) }):Play()
         end
     end)
-    btn.MouseLeave:Connect(function()
-        pressedInside = false
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
+            Tween(btn, 0.15, { Size = UDim2.new(1, 0, 0, 36) }):Play()
+        end
     end)
 
     win:_registerTheme(function(t)
@@ -93,7 +136,7 @@ function LucidUI.Section:CreateToggle(config)
     config = config or {}
     local win, theme = self.Tab.Window, self.Tab.Window.Theme
     local state = config.CurrentValue or false
-    local flag = config.Flag
+    local flag  = config.Flag
 
     local row = Create("Frame", {
         BackgroundColor3 = theme.Surface,
@@ -161,9 +204,18 @@ function LucidUI.Section:CreateToggle(config)
         if not silent and config.Callback then pcall(config.Callback, state) end
     end
 
-    clickArea.MouseButton1Down:Connect(function()
+    AttachSafeClick(clickArea, function()
         PlayUISound("click")
         update(not state)
+    end)
+
+    clickArea.MouseEnter:Connect(function()
+        Tween(row, 0.15, {
+            BackgroundTransparency = math.max(theme.SurfaceTrans - 0.1, 0),
+        }):Play()
+    end)
+    clickArea.MouseLeave:Connect(function()
+        Tween(row, 0.15, { BackgroundTransparency = theme.SurfaceTrans }):Play()
     end)
 
     win:_registerTheme(function(t)
@@ -468,7 +520,7 @@ function LucidUI.Section:CreateDropdown(config)
             }):Play()
         end)
 
-        optBtn.MouseButton1Click:Connect(function()
+        AttachSafeClick(optBtn, function()
             value = opt
             valueLabel.Text = tostring(opt)
             expanded = false
@@ -483,7 +535,7 @@ function LucidUI.Section:CreateDropdown(config)
         table.insert(optionBtns, optBtn)
     end
 
-    headerBtn.MouseButton1Click:Connect(function()
+    AttachSafeClick(headerBtn, function()
         expanded = not expanded
         local openH = #options * (OPT_H + OPT_P) + 8
         Tween(list, 0.22, {
@@ -535,7 +587,7 @@ function LucidUI.Section:CreateKeybind(config)
     local win, theme = self.Tab.Window, self.Tab.Window.Theme
 
     local currentKey = config.CurrentKeybind or Enum.KeyCode.F
-    local flag = config.Flag
+    local flag       = config.Flag
     local listenConn = nil
 
     local row = Create("Frame", {
@@ -576,10 +628,7 @@ function LucidUI.Section:CreateKeybind(config)
     Corner(8, keyBox)
 
     local function stopListening()
-        if listenConn then
-            listenConn:Disconnect()
-            listenConn = nil
-        end
+        if listenConn then listenConn:Disconnect() listenConn = nil end
         keyBox.Text = currentKey.Name
         keyBox.BackgroundColor3 = theme.Background
         LucidUI._keyListening = false
@@ -603,12 +652,11 @@ function LucidUI.Section:CreateKeybind(config)
 
     keyBox.MouseButton1Click:Connect(startListening)
 
-    -- Cancel on tap-elsewhere
     table.insert(win._conns, UserInputService.InputBegan:Connect(function(input, processed)
         if not LucidUI._keyListening then return end
         if input.UserInputType == Enum.UserInputType.Touch
             or input.UserInputType == Enum.UserInputType.MouseButton1 then
-            stopListening()
+            if not processed then stopListening() end
         end
     end))
 
