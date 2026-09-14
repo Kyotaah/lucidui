@@ -516,6 +516,8 @@ function LucidUI.Window:_buildCustomThemeSettings()
     local savedExpanded = false
     local savedButtons = {}
 
+            if not savedExpanded then return end
+
     local function rebuildSaved()
         for _, b in ipairs(savedButtons) do b:Destroy() end
         savedButtons = {}
