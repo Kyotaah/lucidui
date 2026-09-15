@@ -1,7 +1,16 @@
 --[[
     Settings B — background image, keybinds, configs, about,
-    BuildSettingsPanel. Includes an improved auto-accent detector
-    using hue-bucket analysis on saturated pixels.
+    BuildSettingsPanel.
+
+    Accent detection:
+      AutoDetectAccent samples the image on a center-weighted grid,
+      filters out transparent / near-black / near-white / desaturated
+      pixels, buckets hues into 36 bins, smooths the histogram with a
+      triangular kernel, picks the peak, and averages the actual pixels
+      in the winning bin ± 1. Then it boosts saturation, clamps
+      brightness, and runs a WCAG contrast pass against the current
+      theme background — nudging the value channel up or down until
+      the accent reaches a 3:1 ratio.
 
     Click handling:
       Every click goes through BindTap (from 01b_polish.lua). The
@@ -11,9 +20,27 @@
     Keybind capture:
       The pill-toggle keybind row uses a stateful listener. While
       capturing, LucidUI._keyListening is true so the window's global
-      keybind handler ignores keystrokes. The listener is cancelled
-      if the settings panel closes (see 06_window.lua).
+      keybind handler ignores keystrokes.
 ]]
+
+-- ============================================================
+-- Contrast helpers (mirrors 07_settings_a.lua — the library keeps
+-- these local to each file rather than threading them through the
+-- module boundary)
+-- ============================================================
+local function relLuminance(c)
+    local function lin(x)
+        if x <= 0.03928 then return x / 12.92 end
+        return ((x + 0.055) / 1.055) ^ 2.4
+    end
+    return 0.2126 * lin(c.R) + 0.7152 * lin(c.G) + 0.0722 * lin(c.B)
+end
+
+local function contrastRatio(c1, c2)
+    local l1, l2 = relLuminance(c1), relLuminance(c2)
+    if l1 < l2 then l1, l2 = l2, l1 end
+    return (l1 + 0.05) / (l2 + 0.05)
+end
 
 function LucidUI.Window:_buildBackgroundSettings()
     self:_addSettingSection("Background Image")
@@ -265,9 +292,33 @@ function LucidUI.Window:_downloadAndLoadImage(url)
 end
 
 -- ============================================================
--- Improved auto-accent: hue histogram on saturated pixels
+-- Improved auto-accent: center-weighted hue analysis with
+-- saturation-squared scoring and WCAG contrast enforcement.
+--
+-- Pipeline:
+--   1. Resolve URL → EditableImage
+--   2. Sample on a 60×60 grid
+--   3. Per-pixel filter: alpha, brightness bounds, saturation floor
+--   4. Score = saturation² × centerWeight
+--   5. Hue histogram (36 bins) with triangular kernel over ±2
+--   6. Peak bin → average actual pixels from peak ± 1 bins
+--   7. HSV boost: saturation × 1.4, value clamped to [0.65, 0.92]
+--   8. Contrast pass: nudge value until accent hits 3:1 against theme.Background
 -- ============================================================
-function LucidUI.Window:AutoDetectAccent(url)
+function LucidUI.Window:AutoDetectAccent(url, opts)
+    opts = opts or {}
+
+    local gridN       = opts.Grid          or 60
+    local minSat      = opts.MinSat        or 0.18
+    local minVal      = opts.MinVal        or 0.10
+    local maxVal      = opts.MaxVal        or 0.95
+    local minAlpha    = opts.MinAlpha      or 0.30
+    local satBoost    = opts.SatBoost      or 1.4
+    local valFloor    = opts.ValueFloor    or 0.65
+    local valCeil     = opts.ValueCeil     or 0.92
+    local targetRatio = opts.ContrastRatio or 3.0
+
+    -- 1. Resolve to asset id
     local imageId = url
     if url:match("^https?://") then
         print("[LucidUI] AutoAccent: downloading image first")
@@ -296,6 +347,7 @@ function LucidUI.Window:AutoDetectAccent(url)
         return nil
     end
 
+    -- 2. Wait for size
     local size
     for _ = 1, 60 do
         local ok2, s = pcall(function() return img.Size end)
@@ -309,10 +361,13 @@ function LucidUI.Window:AutoDetectAccent(url)
         print("[LucidUI] AutoAccent: image never loaded")
         return nil
     end
-    print("[LucidUI] AutoAccent: image size", size.X, "x", size.Y)
+    print("[LucidUI] AutoAccent: image", size.X .. "x" .. size.Y)
 
-    local stepX = math.max(1, math.floor(size.X / 40))
-    local stepY = math.max(1, math.floor(size.Y / 40))
+    -- 3. Sample
+    local cx, cy = size.X / 2, size.Y / 2
+    local maxDist = math.sqrt(cx * cx + cy * cy)
+    local stepX = math.max(1, math.floor(size.X / gridN))
+    local stepY = math.max(1, math.floor(size.Y / gridN))
 
     local samples = {}
     for y = 0, size.Y - 1, stepY do
@@ -324,15 +379,20 @@ function LucidUI.Window:AutoDetectAccent(url)
                 local r, g, b = pixels[1], pixels[2], pixels[3]
                 local a = (#pixels >= 4) and pixels[4] or 1
 
-                if a > 0.3 then
+                if a >= minAlpha then
                     local c = Color3.new(r, g, b)
                     local h, s, v = Color3.toHSV(c)
 
-                    if v > 0.12 and v < 0.94 and s > 0.15 then
+                    if v > minVal and v < maxVal and s > minSat then
+                        -- Center weight: 1.0 at center, 0.35 at edges.
+                        local dx, dy = x - cx, y - cy
+                        local dist = math.sqrt(dx * dx + dy * dy)
+                        local centerWeight = 1.0 - (dist / maxDist) * 0.65
+
                         table.insert(samples, {
                             r = r, g = g, b = b,
                             h = h, s = s, v = v,
-                            weight = s * s,
+                            weight = (s * s) * centerWeight,
                         })
                     end
                 end
@@ -341,58 +401,115 @@ function LucidUI.Window:AutoDetectAccent(url)
     end
 
     if #samples == 0 then
-        print("[LucidUI] AutoAccent: no valid saturated pixels found")
+        print("[LucidUI] AutoAccent: no valid saturated pixels")
         return nil
     end
-    print("[LucidUI] AutoAccent: collected", #samples, "samples")
+    print("[LucidUI] AutoAccent: samples =", #samples)
 
+    -- 4. Hue histogram with triangular kernel
+    local BINS = 36
     local bins = {}
-    for i = 1, 36 do
-        bins[i] = { weight = 0, rSum = 0, gSum = 0, bSum = 0 }
-    end
+    for i = 1, BINS do bins[i] = { weight = 0, rSum = 0, gSum = 0, bSum = 0 } end
 
     for _, s in ipairs(samples) do
-        local bin = math.floor(s.h * 36) + 1
+        local bin = math.floor(s.h * BINS) + 1
         if bin < 1 then bin = 1 end
-        if bin > 36 then bin = 36 end
+        if bin > BINS then bin = BINS end
         bins[bin].weight = bins[bin].weight + s.weight
-        bins[bin].rSum = bins[bin].rSum + s.r * s.weight
-        bins[bin].gSum = bins[bin].gSum + s.g * s.weight
-        bins[bin].bSum = bins[bin].bSum + s.b * s.weight
+        bins[bin].rSum   = bins[bin].rSum + s.r * s.weight
+        bins[bin].gSum   = bins[bin].gSum + s.g * s.weight
+        bins[bin].bSum   = bins[bin].bSum + s.b * s.weight
+    end
+
+    -- Triangular smoothing over ±2 bins, wrapping around the hue wheel
+    local smoothed = {}
+    for i = 1, BINS do
+        local w0 = bins[i].weight
+        local wl1 = bins[((i - 2) % BINS) + 1].weight
+        local wr1 = bins[(i % BINS) + 1].weight
+        local wl2 = bins[((i - 3) % BINS) + 1].weight
+        local wr2 = bins[((i + 1) % BINS) + 1].weight
+        smoothed[i] = w0 + (wl1 + wr1) * 0.6 + (wl2 + wr2) * 0.25
     end
 
     local bestBin, bestScore = 1, -1
-    for i = 1, 36 do
-        local prev = ((i - 2) % 36) + 1
-        local next = (i % 36) + 1
-        local score = bins[i].weight + bins[prev].weight * 0.5 + bins[next].weight * 0.5
-        if score > bestScore then
-            bestScore = score
+    for i = 1, BINS do
+        if smoothed[i] > bestScore then
+            bestScore = smoothed[i]
             bestBin = i
         end
     end
 
-    local best = bins[bestBin]
-    if best.weight == 0 then
-        print("[LucidUI] AutoAccent: peak bin empty")
+    -- 5. Representative color: average the raw samples in peak ± 1 bins
+    local lo = ((bestBin - 2) % BINS) + 1
+    local mi = bestBin
+    local hi = (bestBin % BINS) + 1
+    local accR, accG, accB, accW = 0, 0, 0, 0
+    for _, s in ipairs(samples) do
+        local bin = math.floor(s.h * BINS) + 1
+        if bin < 1 then bin = 1 end
+        if bin > BINS then bin = BINS end
+        if bin == lo or bin == mi or bin == hi then
+            accR = accR + s.r * s.weight
+            accG = accG + s.g * s.weight
+            accB = accB + s.b * s.weight
+            accW = accW + s.weight
+        end
+    end
+    if accW == 0 then
+        print("[LucidUI] AutoAccent: peak neighbourhood empty")
         return nil
     end
+    local avg = Color3.new(accR / accW, accG / accW, accB / accW)
 
-    local avg = Color3.new(
-        best.rSum / best.weight,
-        best.gSum / best.weight,
-        best.bSum / best.weight
-    )
-
+    -- 6. HSV boost
     local h, s, v = Color3.toHSV(avg)
-    s = math.min(s * 1.6, 1)
-    v = math.clamp(v, 0.70, 0.95)
+    s = math.min(s * satBoost, 1)
+    v = math.clamp(v, valFloor, valCeil)
+    local result = Color3.fromHSV(h, s, v)
 
-    local final = Color3.fromHSV(h, s, v)
-    print(string.format("[LucidUI] AutoAccent: rgb(%d,%d,%d) hsv(%.2f,%.2f,%.2f)",
-        math.floor(final.R*255), math.floor(final.G*255), math.floor(final.B*255),
-        h, s, v))
-    return final
+    -- 7. Contrast pass against the current theme background
+    local bg = (self.Theme and self.Theme.Background) or Color3.fromRGB(28, 28, 30)
+    local ratio = contrastRatio(result, bg)
+    print(string.format("[LucidUI] AutoAccent: pre-contrast ratio %.2f", ratio))
+
+    local guard = 0
+    while ratio < targetRatio and guard < 12 do
+        guard = guard + 1
+        local hh, ss, vv = Color3.toHSV(result)
+        local bgLum = relLuminance(bg)
+
+        -- Decide direction: darken against light backgrounds,
+        -- lighten against dark ones.
+        if bgLum > 0.45 then
+            vv = vv - 0.06
+        else
+            vv = vv + 0.06
+        end
+        vv = math.clamp(vv, 0.15, 0.98)
+        result = Color3.fromHSV(hh, ss, vv)
+        ratio = contrastRatio(result, bg)
+
+        -- If we've hit the value bounds and still failing, kill
+        -- saturation and switch to pure white or black.
+        if vv <= 0.15 or vv >= 0.98 then
+            if bgLum > 0.45 then
+                result = Color3.fromRGB(20, 20, 24)
+            else
+                result = Color3.fromRGB(240, 240, 245)
+            end
+            break
+        end
+    end
+
+    local finalH, finalS, finalV = Color3.toHSV(result)
+    print(string.format(
+        "[LucidUI] AutoAccent: rgb(%d,%d,%d) hsv(%.2f,%.2f,%.2f) contrast %.2f",
+        math.floor(result.R * 255), math.floor(result.G * 255), math.floor(result.B * 255),
+        finalH, finalS, finalV, ratio
+    ))
+
+    return result
 end
 
 -- ============================================================
@@ -442,7 +559,6 @@ function LucidUI.Window:_buildKeybindSettings()
         self._cancelKeybindListen = nil
     end
 
-    -- Expose cancel so ToggleSettings(false) can clean up.
     self._cancelKeybindListen = stopListening
 
     local function startListening()
@@ -455,13 +571,10 @@ function LucidUI.Window:_buildKeybindSettings()
         listenConn = UserInputService.InputBegan:Connect(function(input, processed)
             if processed then return end
             if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
-
-            -- Escape cancels without changing the keybind
             if input.KeyCode == Enum.KeyCode.Escape then
                 stopListening()
                 return
             end
-
             self.PillKeybind = input.KeyCode
             self._configData["pill_keybind"] = input.KeyCode.Name
             stopListening()
@@ -474,7 +587,6 @@ function LucidUI.Window:_buildKeybindSettings()
 
     BindTap(keyBox, startListening)
 
-    -- Clicking elsewhere while listening cancels the capture.
     table.insert(self._conns, UserInputService.InputBegan:Connect(function(input, processed)
         if not LucidUI._keyListening then return end
         if listenConn == nil then return end
