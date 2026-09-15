@@ -44,6 +44,75 @@ local function AttachRipple(button)
     end)
 end
 
+--[[
+    BindTap — tap vs drag discriminator.
+
+    Solves the mobile problem where sliding a finger across a
+    ScrollingFrame (or just across a button) fires a click on
+    release. A "tap" is defined as: pointer down and up, with
+    less than `MoveThreshold` pixels of movement, within
+    `MaxDuration` seconds.
+
+    Use this anywhere you would have used MouseButton1Click.
+    Works identically on desktop (mouse) and mobile (touch).
+
+    Options:
+        MoveThreshold  (number, default 12)  — max pixels moved to still count as a tap
+        MaxDuration    (number, default 1.0) — max seconds between down and up
+        OnDown         (function, optional)  — fires immediately on press (e.g. ripple)
+        OnCancel       (function, optional)  — fires if the press turned out to be a drag
+]]
+local function BindTap(guiObject, callback, options)
+    options = options or {}
+    local moveThreshold = options.MoveThreshold or 12
+    local maxDuration   = options.MaxDuration   or 1.0
+    local onDown        = options.OnDown
+    local onCancel      = options.OnCancel
+
+    guiObject.InputBegan:Connect(function(input)
+        if input.UserInputType ~= Enum.UserInputType.MouseButton1
+        and input.UserInputType ~= Enum.UserInputType.Touch then
+            return
+        end
+
+        local startPos  = input.Position
+        local startTime = tick()
+        local moved     = false
+        local finished  = false
+
+        if onDown then
+            pcall(onDown, input)
+        end
+
+        local changeConn, endConn
+
+        changeConn = UserInputService.InputChanged:Connect(function(changed)
+            if changed ~= input then return end
+            if (changed.Position - startPos).Magnitude > moveThreshold then
+                moved = true
+            end
+        end)
+
+        endConn = UserInputService.InputEnded:Connect(function(ended)
+            if ended ~= input then return end
+            if finished then return end
+            finished = true
+
+            changeConn:Disconnect()
+            endConn:Disconnect()
+
+            local duration = tick() - startTime
+            local isTap = (not moved) and duration <= maxDuration
+
+            if isTap then
+                callback(input)
+            elseif onCancel then
+                pcall(onCancel, input)
+            end
+        end)
+    end)
+end
+
 local function AttachHoverGlow(element, accent)
     accent = accent or Color3.fromRGB(90, 180, 255)
     local glow = Stroke(accent, 1.5, 1, element)
