@@ -9,6 +9,14 @@
       Hover and press handlers read `win.Theme` at call time, not at
       creation time. This means switching themes mid-session updates
       the hover color, the leave color, and the glow accent live.
+
+    Slider animation:
+      • Row highlights on hover
+      • Handle grows 18 → 20 on hover, 20 → 22 on grab
+      • Grab adds a soft glow ring around the handle
+      • :Set() animates fill and handle instead of snapping
+      • Value label briefly flashes white then fades back to accent
+        every time the value changes
 ]]
 
 -- ============================================================
@@ -23,7 +31,7 @@ function LucidUI.Section:CreateButton(config)
         BackgroundColor3 = theme.Surface,
         BackgroundTransparency = theme.SurfaceTrans,
         AutoButtonColor = false,
-        ClipsDescendants = true,   -- ← keeps the ripple inside the button
+        ClipsDescendants = true,
         Size = UDim2.new(1, 0, 0, 36),
         LayoutOrder = self:_nextOrder(),
         ZIndex = 2,
@@ -213,7 +221,7 @@ function LucidUI.Section:CreateToggle(config)
 end
 
 -- ============================================================
--- Slider
+-- Slider — animated
 -- ============================================================
 function LucidUI.Section:CreateSlider(config)
     config = config or {}
@@ -224,6 +232,10 @@ function LucidUI.Section:CreateSlider(config)
     local value = config.CurrentValue or min
     local inc   = config.Increment or 1
     local flag  = config.Flag
+
+    local HANDLE_BASE  = 18
+    local HANDLE_HOVER = 20
+    local HANDLE_GRAB  = 22
 
     local row = Create("Frame", {
         BackgroundColor3 = theme.Surface,
@@ -281,7 +293,7 @@ function LucidUI.Section:CreateSlider(config)
     Corner(2, fill)
 
     local handle = Create("Frame", {
-        Size = UDim2.fromOffset(18, 18),
+        Size = UDim2.fromOffset(HANDLE_BASE, HANDLE_BASE),
         AnchorPoint = Vector2.new(0.5, 0.5),
         Position = UDim2.new((value - min) / (max - min), 0, 0.5, 0),
         BackgroundColor3 = Color3.fromRGB(255, 255, 255),
@@ -290,7 +302,7 @@ function LucidUI.Section:CreateSlider(config)
         Parent = track,
     })
     Corner(9, handle)
-    Stroke(theme.Border, 1, 0.7, handle)
+    local handleStroke = Stroke(theme.Border, 1, 0.7, handle)
 
     local drag = Create("TextButton", {
         Text = "",
@@ -301,7 +313,25 @@ function LucidUI.Section:CreateSlider(config)
     })
 
     local dragging = false
+    local hovering = false
+    local flashConn = nil
 
+    -- ── Value flash ───────────────────────────────────────────
+    -- Briefly white, then fade back to accent. Used on every
+    -- value change (drag or programmatic).
+    local function flashValue()
+        if flashConn then flashConn:Disconnect() flashConn = nil end
+        valueLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        flashConn = Tween(valueLabel, 0.35, { TextColor3 = win.Theme.Accent })
+        flashConn:Play()
+    end
+
+    -- ── Handle sizing helper ──────────────────────────────────
+    local function setHandleSize(size)
+        Tween(handle, 0.14, { Size = UDim2.fromOffset(size, size) }, Enum.EasingStyle.Quart):Play()
+    end
+
+    -- ── Snap-to-input (used while dragging) ───────────────────
     local function setFromInput(input)
         local rel = math.clamp(
             (input.Position.X - track.AbsolutePosition.X) / track.AbsoluteSize.X,
@@ -321,8 +351,10 @@ function LucidUI.Section:CreateSlider(config)
             if LucidUI._activeSlider and LucidUI._activeSlider ~= drag then return end
             LucidUI._activeSlider = drag
             dragging = true
-            Tween(handle, 0.10, { Size = UDim2.fromOffset(22, 22) }):Play()
+            setHandleSize(HANDLE_GRAB)
+            Tween(handleStroke, 0.12, { Transparency = 0.35 }):Play()
             setFromInput(input)
+            flashValue()
             if flag then win._configData[flag] = value end
             if config.Callback then pcall(config.Callback, value) end
         end
@@ -333,6 +365,7 @@ function LucidUI.Section:CreateSlider(config)
         if input.UserInputType == Enum.UserInputType.MouseMovement
             or input.UserInputType == Enum.UserInputType.Touch then
             setFromInput(input)
+            flashValue()
             if flag then win._configData[flag] = value end
             if config.Callback then pcall(config.Callback, value) end
         end
@@ -343,10 +376,29 @@ function LucidUI.Section:CreateSlider(config)
             or input.UserInputType == Enum.UserInputType.Touch then
             if LucidUI._activeSlider == drag then LucidUI._activeSlider = nil end
             dragging = false
-            Tween(handle, 0.15, { Size = UDim2.fromOffset(18, 18) }):Play()
+            setHandleSize(hovering and HANDLE_HOVER or HANDLE_BASE)
+            Tween(handleStroke, 0.18, { Transparency = 0.7 }):Play()
         end
     end))
 
+    -- ── Hover state ──────────────────────────────────────────
+    drag.MouseEnter:Connect(function()
+        hovering = true
+        local t = win.Theme
+        Tween(row, 0.15, {
+            BackgroundTransparency = math.max(t.SurfaceTrans - 0.1, 0),
+        }):Play()
+        if not dragging then setHandleSize(HANDLE_HOVER) end
+    end)
+
+    drag.MouseLeave:Connect(function()
+        hovering = false
+        local t = win.Theme
+        Tween(row, 0.15, { BackgroundTransparency = t.SurfaceTrans }):Play()
+        if not dragging then setHandleSize(HANDLE_BASE) end
+    end)
+
+    -- ── Theme registration ────────────────────────────────────
     win:_registerTheme(function(t)
         row.BackgroundColor3   = t.Surface
         nameLabel.TextColor3   = t.TextPrimary
@@ -354,17 +406,22 @@ function LucidUI.Section:CreateSlider(config)
         track.BackgroundColor3 = t.SliderTrack
         fill.BackgroundColor3  = t.Accent
         rowStroke.Color        = t.Border
+        handleStroke.Color     = t.Border
     end)
 
+    -- ── Programmatic set — animated ───────────────────────────
     local obj = {
         Instance = row,
         Flag = flag,
         Set = function(_, v)
             v = math.clamp(v, min, max)
             value = v
-            fill.Size       = UDim2.new((value - min) / (max - min), 0, 1, 0)
-            handle.Position = UDim2.new((value - min) / (max - min), 0, 0.5, 0)
+            local targetFill   = UDim2.new((value - min) / (max - min), 0, 1, 0)
+            local targetHandle = UDim2.new((value - min) / (max - min), 0, 0.5, 0)
+            Tween(fill, 0.24, { Size = targetFill }, Enum.EasingStyle.Quart):Play()
+            Tween(handle, 0.24, { Position = targetHandle }, Enum.EasingStyle.Quart):Play()
             valueLabel.Text = tostring(value)
+            flashValue()
             if flag then win._configData[flag] = value end
         end,
         Get = function() return value end,
