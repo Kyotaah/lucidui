@@ -3,13 +3,12 @@
 
     Click handling:
       BindTap (from 01b_polish.lua) fires the callback only when the
-      pointer goes down and up within ~12 px of movement. This solves
-      the mobile problem where sliding a finger across a ScrollingFrame
-      (or just across a button) fired a click on release.
+      pointer goes down and up within ~12 px of movement.
 
-      Sliders use InputBegan + InputChanged because dragging IS their
-      interaction model. Everything else — buttons, toggles, dropdown
-      headers and rows, keybind boxes — goes through BindTap.
+    Theme handling:
+      Hover and press handlers read `win.Theme` at call time, not at
+      creation time. This means switching themes mid-session updates
+      the hover color, the leave color, and the glow accent live.
 ]]
 
 -- ============================================================
@@ -43,12 +42,9 @@ function LucidUI.Section:CreateButton(config)
         Parent = btn,
     })
 
-    AttachHoverGlow(btn, theme.Accent)
+    local glow = AttachHoverGlow(btn, theme.Accent)
     AttachHoverSound(btn)
 
-    -- Capture the press position so the ripple spawns where the finger
-    -- actually landed, not where it lifted (they can differ by a few px
-    -- even on a clean tap).
     local pressPos = Vector2.new()
 
     BindTap(btn, function()
@@ -57,14 +53,9 @@ function LucidUI.Section:CreateButton(config)
         PlayUISound("click")
         if config.Callback then pcall(config.Callback) end
     end, {
-        OnDown = function(input)
-            pressPos = input.Position
-        end,
+        OnDown = function(input) pressPos = input.Position end,
     })
 
-    -- Press-down squish. Bound to the button's own InputBegan/InputEnded
-    -- so it only fires for presses that started on this button, and it
-    -- un-squishes when that specific press ends anywhere on screen.
     btn.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1
             or input.UserInputType == Enum.UserInputType.Touch then
@@ -79,15 +70,17 @@ function LucidUI.Section:CreateButton(config)
     end)
 
     btn.MouseEnter:Connect(function()
+        local t = win.Theme
         Tween(btn, 0.15, {
-            BackgroundColor3 = theme.SurfaceHover,
-            BackgroundTransparency = theme.SurfaceHoverTrans,
+            BackgroundColor3 = t.SurfaceHover,
+            BackgroundTransparency = t.SurfaceHoverTrans or 0.15,
         }):Play()
     end)
     btn.MouseLeave:Connect(function()
+        local t = win.Theme
         Tween(btn, 0.15, {
-            BackgroundColor3 = theme.Surface,
-            BackgroundTransparency = theme.SurfaceTrans,
+            BackgroundColor3 = t.Surface,
+            BackgroundTransparency = t.SurfaceTrans,
             Size = UDim2.new(1, 0, 0, 36),
         }):Play()
     end)
@@ -96,6 +89,7 @@ function LucidUI.Section:CreateButton(config)
         btn.BackgroundColor3 = t.Surface
         label.TextColor3 = t.TextPrimary
         stroke.Color = t.Border
+        if glow then glow.Color = t.Accent end
     end)
 
     self:_track(btn)
@@ -162,13 +156,14 @@ function LucidUI.Section:CreateToggle(config)
         Parent = row,
     })
 
-    AttachHoverGlow(row, theme.Accent)
+    local glow = AttachHoverGlow(row, theme.Accent)
     AttachHoverSound(row)
 
     local function update(value, silent)
         state = value
+        local t = win.Theme
         Tween(track, 0.22, {
-            BackgroundColor3 = state and theme.Accent or theme.ToggleOff,
+            BackgroundColor3 = state and t.Accent or t.ToggleOff,
         }, Enum.EasingStyle.Quart):Play()
         Tween(knob, 0.22, {
             Position = state and UDim2.new(1, -22, 0.5, -10) or UDim2.fromOffset(2, 2),
@@ -183,12 +178,14 @@ function LucidUI.Section:CreateToggle(config)
     end)
 
     clickArea.MouseEnter:Connect(function()
+        local t = win.Theme
         Tween(row, 0.15, {
-            BackgroundTransparency = math.max(theme.SurfaceTrans - 0.1, 0),
+            BackgroundTransparency = math.max(t.SurfaceTrans - 0.1, 0),
         }):Play()
     end)
     clickArea.MouseLeave:Connect(function()
-        Tween(row, 0.15, { BackgroundTransparency = theme.SurfaceTrans }):Play()
+        local t = win.Theme
+        Tween(row, 0.15, { BackgroundTransparency = t.SurfaceTrans }):Play()
     end)
 
     win:_registerTheme(function(t)
@@ -196,6 +193,7 @@ function LucidUI.Section:CreateToggle(config)
         label.TextColor3 = t.TextPrimary
         rowStroke.Color = t.Border
         track.BackgroundColor3 = state and t.Accent or t.ToggleOff
+        if glow then glow.Color = t.Accent end
     end)
 
     local obj = {
@@ -481,14 +479,16 @@ function LucidUI.Section:CreateDropdown(config)
         Corner(8, optBtn)
 
         optBtn.MouseEnter:Connect(function()
+            local t = win.Theme
             Tween(optBtn, 0.12, {
-                BackgroundColor3 = theme.Accent,
+                BackgroundColor3 = t.Accent,
                 BackgroundTransparency = 0.3,
             }):Play()
         end)
         optBtn.MouseLeave:Connect(function()
+            local t = win.Theme
             Tween(optBtn, 0.12, {
-                BackgroundColor3 = theme.Background,
+                BackgroundColor3 = t.Background,
                 BackgroundTransparency = 0.5,
             }):Play()
         end)
@@ -603,7 +603,7 @@ function LucidUI.Section:CreateKeybind(config)
     local function stopListening()
         if listenConn then listenConn:Disconnect() listenConn = nil end
         keyBox.Text = currentKey.Name
-        keyBox.BackgroundColor3 = theme.Background
+        keyBox.BackgroundColor3 = win.Theme.Background
         LucidUI._keyListening = false
     end
 
@@ -611,7 +611,7 @@ function LucidUI.Section:CreateKeybind(config)
         if LucidUI._keyListening then return end
         LucidUI._keyListening = true
         keyBox.Text = "..."
-        keyBox.BackgroundColor3 = theme.Accent
+        keyBox.BackgroundColor3 = win.Theme.Accent
         PlayUISound("click")
 
         listenConn = UserInputService.InputBegan:Connect(function(input)
