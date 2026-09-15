@@ -1,12 +1,14 @@
 --[[
-    Elements — interactive widgets with safe click handling.
+    Elements — interactive widgets.
 
-    AttachSafeClick only fires the callback when:
-      • The press STARTED on this element, AND
-      • The pointer is still inside when released.
+    Click handling:
+      AttachSafeClick fires the callback only when the press STARTED on
+      the element and the release is still inside it. This prevents the
+      "press A, drag to B, release → B fires" bug on both mouse and touch.
 
-    This prevents the "press A, drag to B, release → B fires" bug
-    that GuiButton.MouseButton1Click causes on both mouse and touch.
+      Toggles, dropdown headers, and option rows use plain MouseButton1Down
+      instead, because they don't need drag-isolation and it makes them
+      immune to a stuck _pressOwner flag.
 ]]
 
 local function AttachSafeClick(element, callback)
@@ -45,14 +47,20 @@ local function AttachSafeClick(element, callback)
             if isPressed and inside and callback then
                 pcall(callback)
             end
-            isPressed = false
-            inside = false
-        elseif isPressed then
-            isPressed = false
-            inside = false
         end
+        -- Always reset local state, regardless of branch
+        isPressed = false
+        inside    = false
     end)
 end
+
+-- Watchdog: if _pressOwner points at a destroyed element, clear it.
+-- Prevents a whole window's worth of buttons from becoming unclickable.
+RunService.Heartbeat:Connect(function()
+    if LucidUI._pressOwner and not LucidUI._pressOwner.Parent then
+        LucidUI._pressOwner = nil
+    end
+end)
 
 -- ============================================================
 -- Button
@@ -204,7 +212,7 @@ function LucidUI.Section:CreateToggle(config)
         if not silent and config.Callback then pcall(config.Callback, state) end
     end
 
-    AttachSafeClick(clickArea, function()
+    clickArea.MouseButton1Down:Connect(function()
         PlayUISound("click")
         update(not state)
     end)
@@ -520,7 +528,7 @@ function LucidUI.Section:CreateDropdown(config)
             }):Play()
         end)
 
-        AttachSafeClick(optBtn, function()
+        optBtn.MouseButton1Down:Connect(function()
             value = opt
             valueLabel.Text = tostring(opt)
             expanded = false
@@ -535,7 +543,7 @@ function LucidUI.Section:CreateDropdown(config)
         table.insert(optionBtns, optBtn)
     end
 
-    AttachSafeClick(headerBtn, function()
+    headerBtn.MouseButton1Down:Connect(function()
         expanded = not expanded
         local openH = #options * (OPT_H + OPT_P) + 8
         Tween(list, 0.22, {
@@ -650,7 +658,7 @@ function LucidUI.Section:CreateKeybind(config)
         end)
     end
 
-    keyBox.MouseButton1Click:Connect(startListening)
+    keyBox.MouseButton1Down:Connect(startListening)
 
     table.insert(win._conns, UserInputService.InputBegan:Connect(function(input, processed)
         if not LucidUI._keyListening then return end
