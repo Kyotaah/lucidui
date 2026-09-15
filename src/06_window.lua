@@ -419,7 +419,15 @@ function LucidUI:CreateWindow(config)
         ZIndex = 5,
         Parent = W.Main,
     })
-    Corner(0, W.SettingsPanel)
+    -- Round only the bottom corners so the panel matches the main
+    -- window's 18px radius. The top stays square because it butts
+    -- against the header separator.
+    local spCorner = Instance.new("UICorner")
+    spCorner.TopLeftRadius     = UDim.new(0, 0)
+    spCorner.TopRightRadius    = UDim.new(0, 0)
+    spCorner.BottomLeftRadius  = UDim.new(0, 18)
+    spCorner.BottomRightRadius = UDim.new(0, 18)
+    spCorner.Parent = W.SettingsPanel
 
     local spHeader = Create("Frame", {
         Size = UDim2.new(1, 0, 0, 40),
