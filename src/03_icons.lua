@@ -1,6 +1,16 @@
 --[[
     Icons — frame-based builders. All visuals are constructed from
     Frames/Rects so they render identically on any device.
+
+    BuildGearIcon returns (holder, spinTarget, parts, hole):
+      holder     — the 18×18 container parented to the button
+      spinTarget — the object whose .Rotation should be animated.
+                   This is the HOLDER, not the ring. Rotating the
+                   ring alone does nothing visible because a circle
+                   looks the same at every angle, and the teeth are
+                   siblings of the ring, not children.
+      parts      — array of all colored frames (for theme tweens)
+      hole       — the center cutout frame
 ]]
 
 local function IconHolder(parent, size)
@@ -71,5 +81,7 @@ function BuildGearIcon(parent, size, color, holeColor)
     })
     Corner(999, hole)
 
-    return holder, ring, parts, hole
+    -- Return the holder as the spin target so the whole gear
+    -- (ring + teeth + hole) rotates as one unit.
+    return holder, holder, parts, hole
 end
