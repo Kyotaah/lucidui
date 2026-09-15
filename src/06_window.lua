@@ -2,22 +2,23 @@
     Window — creates the main window and every layer that sits inside it.
 
     Gesture handling:
-      Header drag and resize share a single gesture lock (`gesture`
-      table below). Whichever fires InputBegan first owns the gesture;
-      any other input object is ignored. This prevents the "resize and
-      drag at the same time" bug on multi-touch devices, and stops a
-      second finger on the header from hijacking an in-progress drag.
-
-      Each gesture tracks the specific InputObject that started it, so
-      InputChanged and InputEnded only act on the correct finger.
+      Header drag and resize share a single gesture lock (`gesture`).
+      Whichever fires InputBegan first owns the gesture; any other
+      input object is ignored. Each gesture tracks the specific
+      InputObject that started it.
 
     Click handling:
       Every actual click goes through BindTap (from 01b_polish.lua).
 
     Keybinds:
       RightShift toggles window visibility.
-      W.PillKeybind (configurable, default Home) toggles pill mode:
-      press once to minimize to pill, press again to restore.
+      W.PillKeybind (configurable, default Home) toggles pill mode.
+
+    Minimize behavior:
+      Clicking the orange dot fades out the gear icon, then shrinks
+      the window's width to just fit the title, leaving only the
+      minimize and close dots on the right. Restoring animates the
+      width back and fades the gear in.
 ]]
 
 LucidUI.Window = {}
@@ -76,6 +77,9 @@ function LucidUI:CreateWindow(config)
     W._height = config.Height or 460
     W._fullSize      = UDim2.fromOffset(W._width, W._height)
     W._collapsedSize = UDim2.fromOffset(W._width, 44)
+
+    -- Will be set after measuring the title
+    W._compactWidth = nil
 
     LucidUI._lastTheme = W.Theme
     Compat.ensureFolders()
@@ -141,6 +145,15 @@ function LucidUI:CreateWindow(config)
         Parent = W.Header,
     })
 
+    -- Compute the compact (minimized) window width from the title text.
+    -- Layout: 18px left padding + text + 18px gap + ~84px for the two
+    -- remaining dots and right padding. Clamped to a sensible minimum
+    -- and never larger than the full width.
+    local titlePx = TextService:GetTextSize(
+        W.Name, 16, Enum.Font.GothamBold, Vector2.new(2000, 44)
+    )
+    W._compactWidth = math.clamp(titlePx.X + 120, 220, W._width)
+
     local settingsBtn = Create("TextButton", {
         Text = "",
         BackgroundTransparency = 1,
@@ -149,6 +162,7 @@ function LucidUI:CreateWindow(config)
         ZIndex = 3,
         Parent = W.Header,
     })
+    W._settingsBtn = settingsBtn
 
     local gearHolder, gearRing, gearParts, gearHole =
         BuildGearIcon(settingsBtn, 18, W.Theme.TextSecondary, W.Theme.Background)
@@ -298,9 +312,6 @@ function LucidUI:CreateWindow(config)
     -- ============================================================
     -- Shared gesture state — header drag and resize
     -- ============================================================
-    -- `gesture.input` tracks the specific InputObject that started
-    -- the current gesture. Any other input object is rejected, so
-    -- two-finger chaos can't happen.
     local gesture = {
         input        = nil,
         mode         = nil,  -- "drag" | "resize"
@@ -311,7 +322,7 @@ function LucidUI:CreateWindow(config)
 
     W.Header.InputBegan:Connect(function(input)
         if not isPrimaryPointer(input) then return end
-        if gesture.input then return end   -- already busy
+        if gesture.input then return end
         gesture.input        = input
         gesture.mode         = "drag"
         gesture.startPos     = input.Position
@@ -355,7 +366,7 @@ function LucidUI:CreateWindow(config)
 
     resizeHandle.InputBegan:Connect(function(input)
         if not isPrimaryPointer(input) then return end
-        if gesture.input then return end   -- drag already owns the lock
+        if gesture.input then return end
         gesture.input     = input
         gesture.mode      = "resize"
         gesture.startPos  = input.Position
@@ -377,6 +388,13 @@ function LucidUI:CreateWindow(config)
             W._height = math.clamp(gesture.startSize.Y + d.Y, W._minHeight, W._maxHeight)
             W._fullSize      = UDim2.fromOffset(W._width, W._height)
             W._collapsedSize = UDim2.fromOffset(W._width, 44)
+
+            -- Recompute compact width when the window is resized
+            local tpx = TextService:GetTextSize(
+                W.Name, 16, Enum.Font.GothamBold, Vector2.new(2000, 44)
+            )
+            W._compactWidth = math.clamp(tpx.X + 120, 220, W._width)
+
             if not W.Minimized then
                 W.Main.Size    = UDim2.fromOffset(W._width, W._height)
                 W.Content.Size = UDim2.new(1, -24, 1, -110)
@@ -397,8 +415,7 @@ function LucidUI:CreateWindow(config)
     end))
 
     -- ============================================================
-    -- Global keybinds: RightShift toggles visibility,
-    -- W.PillKeybind toggles pill mode.
+    -- Global keybinds
     -- ============================================================
     table.insert(W._conns, UserInputService.InputBegan:Connect(function(input, processed)
         if processed then return end
@@ -464,8 +481,6 @@ function LucidUI:CreateWindow(config)
     })
 
     BindTap(backBtn, function()
-        -- Cancel any in-progress keybind listener so it doesn't
-        -- keep swallowing keyboard input after the panel closes.
         if W._cancelKeybindListen then pcall(W._cancelKeybindListen) end
         W:ToggleSettings(false)
     end, { MoveThreshold = 8 })
@@ -560,7 +575,6 @@ function LucidUI:CreateWindow(config)
         Parent = W.FloatingPill,
     })
 
-    -- Pill drag — own gesture lock, same pattern as header/resize.
     local pillGesture = { input = nil, startPos = nil, startWindowPos = nil }
 
     W.FloatingPill.InputBegan:Connect(function(input)
@@ -694,8 +708,6 @@ function LucidUI.Window:RestoreFromPill()
     task.delay(0.4, function() ClampPosition(self.Main) end)
 end
 
--- New: toggle between window and pill with one method. The
--- configurable PillKeybind calls this.
 function LucidUI.Window:TogglePillMode()
     if self.Floating then
         self:RestoreFromPill()
@@ -726,7 +738,6 @@ function LucidUI.Window:ToggleSettings(state)
         if self._themeSlotsRefresh    then pcall(self._themeSlotsRefresh) end
         if self._themeDropdownRefresh then pcall(self._themeDropdownRefresh) end
     else
-        -- Cancel any active keybind listener before closing.
         if self._cancelKeybindListen then pcall(self._cancelKeybindListen) end
 
         local slide = TweenService:Create(self.SettingsPanel, Ease.In(0.26), { Position = HIDDEN })
@@ -777,23 +788,74 @@ function LucidUI.Window:SetVisible(state)
 end
 
 function LucidUI.Window:SetMinimized(state)
+    if state == self.Minimized then return end
     self.Minimized = state
-    local targetY = state and 44 or self._height
 
-    TweenService:Create(self.Main, Ease.Out(0.30), {
-        Size = UDim2.fromOffset(self._width, targetY),
-    }):Play()
+    local collapsedHeight = 44
+    local targetWidth  = state and (self._compactWidth or self._width) or self._width
+    local targetHeight = state and collapsedHeight or self._height
 
     if state then
+        -- Fade the gear out first, then hide it. Fade the label offset
+        -- adjusts so the title stays anchored to the left.
+        if self._gearRefs then
+            for _, p in ipairs(self._gearRefs.parts) do
+                TweenService:Create(p, TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+                    { BackgroundTransparency = 1 }):Play()
+            end
+            if self._gearRefs.hole then
+                TweenService:Create(self._gearRefs.hole, TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+                    { BackgroundTransparency = 1 }):Play()
+            end
+        end
+        task.delay(0.17, function()
+            if self._settingsBtn then
+                self._settingsBtn.Visible = false
+            end
+        end)
+
+        -- Hide settings panel if it's open
+        if self.SettingsOpen then self:ToggleSettings(false) end
+
+        -- Hide tab/content/separator immediately (they'd be clipped anyway)
         self.Content.Visible   = false
         self.Separator.Visible = false
         self.TabStrip.Visible  = false
-        if self.SettingsOpen then self:ToggleSettings(false) end
-    else
+    end
+
+    -- Animate the frame size
+    TweenService:Create(self.Main, Ease.Out(0.30), {
+        Size = UDim2.fromOffset(targetWidth, targetHeight),
+    }):Play()
+
+    if not state then
+        -- Restore: expand frame first, then reveal everything else
+        task.delay(0.05, function()
+            if self._settingsBtn then
+                self._settingsBtn.Visible = true
+                if self._gearRefs then
+                    for _, p in ipairs(self._gearRefs.parts) do
+                        p.BackgroundTransparency = 1
+                        TweenService:Create(p, TweenInfo.new(0.28, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+                            { BackgroundTransparency = 0 }):Play()
+                    end
+                    if self._gearRefs.hole then
+                        self._gearRefs.hole.BackgroundTransparency = 1
+                        TweenService:Create(self._gearRefs.hole, TweenInfo.new(0.28, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+                            { BackgroundTransparency = 0 }):Play()
+                    end
+                end
+            end
+        end)
+
         if not self.SettingsOpen then
-            self.Content.Visible   = true
-            self.Separator.Visible = true
-            self.TabStrip.Visible  = true
+            task.delay(0.15, function()
+                if not self.Minimized then
+                    self.Content.Visible   = true
+                    self.Separator.Visible = true
+                    self.TabStrip.Visible  = true
+                end
+            end)
         end
     end
 
