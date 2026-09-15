@@ -2,6 +2,11 @@
     Settings B — background image, configs, about, BuildSettingsPanel.
     Includes an improved auto-accent detector using hue-bucket
     analysis on saturated pixels.
+
+    Click handling:
+      Every click goes through BindTap (from 01b_polish.lua). The
+      image-transparency slider keeps InputBegan/InputChanged because
+      drag IS its interaction model.
 ]]
 
 function LucidUI.Window:_buildBackgroundSettings()
@@ -49,7 +54,7 @@ function LucidUI.Window:_buildBackgroundSettings()
             Size = UDim2.new(0.33, -4, 1, 0), Parent = actionRow,
         })
         Corner(8, b)
-        b.MouseButton1Click:Connect(cb)
+        BindTap(b, cb, { MoveThreshold = 8 })
         return b
     end
 
@@ -130,6 +135,7 @@ function LucidUI.Window:_buildBackgroundSettings()
         Text = "", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0), Parent = transTrack,
     })
 
+    -- Transparency slider — drag interaction, keeps InputBegan/InputChanged.
     local active = false
     local function setTrans(input)
         local rel = math.clamp((input.Position.X - transTrack.AbsolutePosition.X) / transTrack.AbsoluteSize.X, 0, 1)
@@ -454,20 +460,21 @@ function LucidUI.Window:_buildConfigSettings()
                 Size = UDim2.new(1, 0, 0, 32), LayoutOrder = i, Parent = list,
             })
             Corner(8, opt)
-            opt.MouseButton1Click:Connect(function()
-                self._currentConfig = name
-                slotLabel.Text = name
+            local configName = name  -- capture per iteration
+            BindTap(opt, function()
+                self._currentConfig = configName
+                slotLabel.Text = configName
                 expanded = false
                 Tween(list, 0.22, { Size = UDim2.new(1, -20, 0, 0) }):Play()
                 Tween(row, 0.22, { Size = UDim2.new(1, 0, 0, 40) }):Play()
                 Tween(arrowLbl, 0.2, { Rotation = 0 }):Play()
-                self:LoadConfig(name)
+                self:LoadConfig(configName)
             end)
             table.insert(slotButtons, opt)
         end
     end
 
-    headerBtn.MouseButton1Click:Connect(function()
+    BindTap(headerBtn, function()
         expanded = not expanded
         local h = 0
         if expanded then rebuildSlots(); h = #slotButtons * 36 + 8 end
@@ -502,7 +509,7 @@ function LucidUI.Window:_buildConfigSettings()
         Size = UDim2.fromOffset(90, 26), Position = UDim2.new(1, -104, 0.5, -13), Parent = newRow,
     })
     Corner(8, saveNewBtn)
-    saveNewBtn.MouseButton1Click:Connect(function()
+    BindTap(saveNewBtn, function()
         local name = inputBox.Text
         if name == "" or name == "default" then
             LucidUI:Notify({ Title = "Invalid Name", Message = "Pick another name", Accent = Color3.fromRGB(255,80,80) })
@@ -511,7 +518,7 @@ function LucidUI.Window:_buildConfigSettings()
         self:SaveConfig(name)
         inputBox.Text = ""
         rebuildSlots()
-    end)
+    end, { MoveThreshold = 8 })
 
     local actionRow = Create("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 36) })
     self:_addSettingFrame(actionRow)
@@ -527,7 +534,7 @@ function LucidUI.Window:_buildConfigSettings()
             Size = UDim2.new(0.33, -4, 1, 0), Parent = actionRow,
         })
         Corner(8, b)
-        b.MouseButton1Click:Connect(cb)
+        BindTap(b, cb, { MoveThreshold = 8 })
         return b
     end
 
