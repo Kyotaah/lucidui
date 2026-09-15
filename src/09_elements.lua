@@ -2,16 +2,17 @@
     Elements — interactive widgets.
 
     Click handling:
-      AttachSafeClick fires the callback only when the press STARTED on
-      the element and the release is still inside it. This prevents the
-      "press A, drag to B, release → B fires" bug on both mouse and touch.
+      AttachSafeClick(window, element, callback) — fires only when the
+      press STARTED on the element and the release is still inside it.
+      The press lock is per-window (window._pressOwner), so multiple
+      windows don't fight over the same flag and destroying one window
+      releases only its own lock.
 
-      Toggles, dropdown headers, and option rows use plain MouseButton1Down
-      instead, because they don't need drag-isolation and it makes them
-      immune to a stuck _pressOwner flag.
+      Toggles, sliders, dropdown headers/rows, and keybinds use plain
+      MouseButton1Down because they don't need drag-isolation.
 ]]
 
-local function AttachSafeClick(element, callback)
+local function AttachSafeClick(window, element, callback)
     local isPressed = false
     local inside    = false
 
@@ -19,10 +20,10 @@ local function AttachSafeClick(element, callback)
         if input.UserInputType ~= Enum.UserInputType.MouseButton1
             and input.UserInputType ~= Enum.UserInputType.Touch then return end
 
-        if LucidUI._pressOwner and LucidUI._pressOwner ~= element then return end
+        if window._pressOwner and window._pressOwner ~= element then return end
 
-        if not LucidUI._pressOwner then
-            LucidUI._pressOwner = element
+        if not window._pressOwner then
+            window._pressOwner = element
             inside = true
         end
         isPressed = true
@@ -33,7 +34,7 @@ local function AttachSafeClick(element, callback)
     end)
 
     element.MouseEnter:Connect(function()
-        if isPressed and LucidUI._pressOwner == element then
+        if isPressed and window._pressOwner == element then
             inside = true
         end
     end)
@@ -42,23 +43,24 @@ local function AttachSafeClick(element, callback)
         if input.UserInputType ~= Enum.UserInputType.MouseButton1
             and input.UserInputType ~= Enum.UserInputType.Touch then return end
 
-        if LucidUI._pressOwner == element then
-            LucidUI._pressOwner = nil
+        if window._pressOwner == element then
+            window._pressOwner = nil
             if isPressed and inside and callback then
                 pcall(callback)
             end
         end
-        -- Always reset local state, regardless of branch
         isPressed = false
         inside    = false
     end)
 end
 
--- Watchdog: if _pressOwner points at a destroyed element, clear it.
--- Prevents a whole window's worth of buttons from becoming unclickable.
+-- Watchdog: if a window's _pressOwner points at a destroyed element, clear it.
 RunService.Heartbeat:Connect(function()
-    if LucidUI._pressOwner and not LucidUI._pressOwner.Parent then
-        LucidUI._pressOwner = nil
+    for _, w in ipairs(LucidUI._windows) do
+        local owner = w._pressOwner
+        if owner and not owner.Parent then
+            w._pressOwner = nil
+        end
     end
 end)
 
@@ -96,7 +98,7 @@ function LucidUI.Section:CreateButton(config)
     AttachRipple(btn)
     AttachHoverGlow(btn, theme.Accent)
     AttachHoverSound(btn)
-    AttachSafeClick(btn, function()
+    AttachSafeClick(win, btn, function()
         PlayUISound("click")
         if config.Callback then pcall(config.Callback) end
     end)
