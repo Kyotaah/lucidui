@@ -10,12 +10,53 @@
       Each color field is a 48px row with a swatch. Tapping the row
       opens a modal HSV picker.
 
+    Auto-contrast:
+      ApplyCustomTheme checks the user's TextPrimary against their
+      Background using WCAG relative luminance. If the contrast ratio
+      is below 4.5:1, it silently swaps to white or near-black —
+      whichever reads better. TextMuted gets the same treatment with
+      a 3:1 threshold. The picker's value is written back so it
+      reflects the actual rendered color.
+
     Color picker modal:
-      • Pop-in: scale 0.82 → 1 with Back easing (0.32s), fade 0.22s
-      • Pop-out: scale 1 → 0.86 with Quad.In (0.18s), fade 0.18s
-      • Backdrop absorbs clicks and closes the picker when tapped
-      • Header carries a Frames-built paint bucket icon
+      Pop-in with Back-ease scale, pop-out with Quad.In.
+      Backdrop absorbs clicks and closes on tap-outside.
+      Header carries a Frames-built paint bucket icon.
 ]]
+
+-- ============================================================
+-- Contrast helpers — WCAG relative luminance
+-- ============================================================
+local function relLuminance(c)
+    local function lin(x)
+        if x <= 0.03928 then return x / 12.92 end
+        return ((x + 0.055) / 1.055) ^ 2.4
+    end
+    return 0.2126 * lin(c.R) + 0.7152 * lin(c.G) + 0.0722 * lin(c.B)
+end
+
+local function contrastRatio(c1, c2)
+    local l1, l2 = relLuminance(c1), relLuminance(c2)
+    if l1 < l2 then l1, l2 = l2, l1 end
+    return (l1 + 0.05) / (l2 + 0.05)
+end
+
+-- If `preferred` doesn't reach `minRatio` contrast against `bg`,
+-- swap it for whichever of (light, dark) reads better.
+-- Returns (color, wasAdjusted).
+local function autoReadableText(preferred, bg, minRatio)
+    minRatio = minRatio or 4.5
+    if contrastRatio(preferred, bg) >= minRatio then
+        return preferred, false
+    end
+    local light = Color3.fromRGB(240, 240, 245)
+    local dark  = Color3.fromRGB(22, 22, 26)
+    if contrastRatio(light, bg) >= contrastRatio(dark, bg) then
+        return light, true
+    else
+        return dark, true
+    end
+end
 
 -- ============================================================
 -- Paint bucket icon — handle + tapered body + paint drop.
@@ -33,7 +74,6 @@ local function BuildPaintBucketIcon(parent, size, color)
     local barW = math.max(size * 0.08, 1)
     local parts = {}
 
-    -- Handle: thin U above the bucket
     local handleH = size * 0.26
     local leftBar = Create("Frame", {
         Size = UDim2.fromOffset(barW, handleH),
@@ -67,7 +107,6 @@ local function BuildPaintBucketIcon(parent, size, color)
     Corner(barW / 2, topBar)
     table.insert(parts, topBar)
 
-    -- Bucket body — slightly rounded bottom, square top
     local bodyW = size * 0.74
     local bodyH = size * 0.50
     local body = Create("Frame", {
@@ -86,7 +125,6 @@ local function BuildPaintBucketIcon(parent, size, color)
     bodyCorner.Parent = body
     table.insert(parts, body)
 
-    -- Rim: a thin lighter bar across the top of the body
     local rim = Create("Frame", {
         Size = UDim2.new(1, 2, 0, barW),
         Position = UDim2.new(0.5, 0, 0, 0),
@@ -98,7 +136,6 @@ local function BuildPaintBucketIcon(parent, size, color)
     })
     Corner(barW / 2, rim)
 
-    -- Paint drop falling from the right side
     local dropSize = size * 0.16
     local drop = Create("Frame", {
         Size = UDim2.fromOffset(dropSize, dropSize),
@@ -156,18 +193,44 @@ function LucidUI.Window:ApplyCustomTheme()
     local t = {}
     for k, v in pairs(base) do t[k] = v end
     for k, v in pairs(self._customTheme) do t[k] = v end
+
+    -- ── Auto-contrast pass ─────────────────────────────────────
+    -- Primary text: needs 4.5:1 against the background. If the
+    -- user's pick fails, swap to a readable alternative and write
+    -- it back so the picker reflects the actual color.
+    local readablePrimary, adjusted = autoReadableText(
+        self._customTheme.TextPrimary,
+        self._customTheme.Background,
+        4.5
+    )
+    if adjusted then
+        self._customTheme.TextPrimary = readablePrimary
+    end
+    t.TextPrimary = readablePrimary
+
+    -- Secondary: 8% darker than primary — stays subordinate but
+    -- still readable.
     t.TextSecondary = Color3.new(
         math.min(t.TextPrimary.R * 0.92, 1),
         math.min(t.TextPrimary.G * 0.92, 1),
-        math.min(t.TextPrimary.B * 0.92, 1))
-    t.TextMuted = Color3.new(
+        math.min(t.TextPrimary.B * 0.92, 1)
+    )
+
+    -- Muted: midpoint between primary and background. Enforce a
+    -- 3:1 minimum so it stays legible at small sizes.
+    local mutedRaw = Color3.new(
         (t.TextPrimary.R + t.Background.R) * 0.5,
         (t.TextPrimary.G + t.Background.G) * 0.5,
-        (t.TextPrimary.B + t.Background.B) * 0.5)
+        (t.TextPrimary.B + t.Background.B) * 0.5
+    )
+    local mutedColor = autoReadableText(mutedRaw, t.Background, 3)
+    t.TextMuted = mutedColor
+
     t.ToggleOff   = t.Surface
     t.SliderTrack = t.Surface
     t.TabActive   = t.TextPrimary
     t.TabInactive = t.TextMuted
+
     LucidUI.Themes["__custom_runtime"] = t
     self.Theme = t
     self.ThemeName = "Custom"
@@ -361,7 +424,6 @@ function LucidUI.Window:_openColorPicker(fieldKey, fieldLabel)
     local base = self._customTheme[fieldKey]
     local H, S, V = Color3.toHSV(base)
 
-    -- ── Modal root: full-screen overlay (Frame, dim backdrop) ──
     local modal = Create("Frame", {
         Name = "ColorPickerModal",
         Size = UDim2.fromScale(1, 1),
@@ -373,7 +435,6 @@ function LucidUI.Window:_openColorPicker(fieldKey, fieldLabel)
     })
     self._colorPickerModal = modal
 
-    -- ── Backdrop button — absorbs clicks + closes on tap-outside ──
     local backdrop = Create("TextButton", {
         Name = "Backdrop",
         Text = "",
@@ -385,7 +446,6 @@ function LucidUI.Window:_openColorPicker(fieldKey, fieldLabel)
         Parent = modal,
     })
 
-    -- ── Card (CanvasGroup so we can fade the whole thing) ──────
     local card = Create("CanvasGroup", {
         Size = UDim2.fromOffset(360, 260),
         Position = UDim2.fromScale(0.5, 0.5),
@@ -393,19 +453,17 @@ function LucidUI.Window:_openColorPicker(fieldKey, fieldLabel)
         BackgroundColor3 = self.Theme.Background,
         BackgroundTransparency = 0.05,
         BorderSizePixel = 0,
-        GroupTransparency = 1,          -- invisible at start
+        GroupTransparency = 1,
         ZIndex = 2,
         Parent = modal,
     })
     Corner(16, card)
     Stroke(self.Theme.Border, 1, 0.5, card)
 
-    -- Pop scale — starts small, tweens up with Back easing.
     local popScale = Instance.new("UIScale")
     popScale.Scale = 0.82
     popScale.Parent = card
 
-    -- ── Header: paint bucket icon + label ──────────────────────
     local iconHolder = BuildPaintBucketIcon(card, 20, self.Theme.Accent)
     iconHolder.Position = UDim2.fromOffset(16, 14)
     iconHolder.ZIndex = 3
@@ -428,7 +486,6 @@ function LucidUI.Window:_openColorPicker(fieldKey, fieldLabel)
         ZIndex = 3, Parent = card,
     })
 
-    -- ── SV square ──────────────────────────────────────────────
     local svArea = Create("Frame", {
         Size = UDim2.fromOffset(250, 155),
         Position = UDim2.fromOffset(18, 48),
@@ -474,7 +531,6 @@ function LucidUI.Window:_openColorPicker(fieldKey, fieldLabel)
     })
     Corner(8, dot)
 
-    -- ── Hue strip ──────────────────────────────────────────────
     local hueStrip = Create("Frame", {
         Size = UDim2.fromOffset(26, 155),
         Position = UDim2.new(1, -44, 0, 48),
@@ -504,7 +560,6 @@ function LucidUI.Window:_openColorPicker(fieldKey, fieldLabel)
         ZIndex = 6, Parent = hueStrip,
     })
 
-    -- ── Bottom row: preview swatch, hex, done ──────────────────
     local preview = Create("Frame", {
         Size = UDim2.fromOffset(32, 32),
         Position = UDim2.fromOffset(18, 214),
@@ -553,9 +608,9 @@ function LucidUI.Window:_openColorPicker(fieldKey, fieldLabel)
             math.floor(c.R * 255), math.floor(c.G * 255), math.floor(c.B * 255))
         self._customTheme[fieldKey] = c
         self:ApplyCustomTheme()
+        if self._refreshSwatches then pcall(self._refreshSwatches) end
     end
 
-    -- ── SV drag ────────────────────────────────────────────────
     local svDrag = false
     local function svUpdate(input)
         S = math.clamp((input.Position.X - svArea.AbsolutePosition.X) / svArea.AbsoluteSize.X, 0, 1)
@@ -578,7 +633,6 @@ function LucidUI.Window:_openColorPicker(fieldKey, fieldLabel)
             or input.UserInputType == Enum.UserInputType.Touch then svDrag = false end
     end))
 
-    -- ── Hue drag ───────────────────────────────────────────────
     local hueDrag = false
     local function hueUpdate(input)
         H = math.clamp((input.Position.Y - hueStrip.AbsolutePosition.Y) / hueStrip.AbsoluteSize.Y, 0, 1)
@@ -600,7 +654,6 @@ function LucidUI.Window:_openColorPicker(fieldKey, fieldLabel)
             or input.UserInputType == Enum.UserInputType.Touch then hueDrag = false end
     end))
 
-    -- ── Hex input ──────────────────────────────────────────────
     hexBox.FocusLost:Connect(function()
         local hex = hexBox.Text:gsub("#", "")
         if #hex == 6 then
@@ -614,9 +667,6 @@ function LucidUI.Window:_openColorPicker(fieldKey, fieldLabel)
         end
     end)
 
-    -- ── Pop-in animation ───────────────────────────────────────
-    -- Fade backdrop in, pop card with Back-ease overshoot, fade card.
-    -- Total ~0.32s. Deliberately visible, not a blink.
     TweenService:Create(modal, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
         { BackgroundTransparency = 0.55 }):Play()
     TweenService:Create(popScale, TweenInfo.new(0.32, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
@@ -624,7 +674,6 @@ function LucidUI.Window:_openColorPicker(fieldKey, fieldLabel)
     TweenService:Create(card, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
         { GroupTransparency = 0 }):Play()
 
-    -- ── Close with exit animation ──────────────────────────────
     local closing = false
     local function closeModal()
         if closing then return end
@@ -722,6 +771,14 @@ function LucidUI.Window:_buildCustomThemeSettings()
         end)
     end
 
+    -- Called from the picker's applyColor so swatches reflect any
+    -- auto-contrast adjustments applied to _customTheme.
+    self._refreshSwatches = function()
+        for _, s in ipairs(swatches) do
+            s.frame.BackgroundColor3 = self._customTheme[s.key]
+        end
+    end
+
     local actionRow = Create("Frame", {
         BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 36),
     })
@@ -756,11 +813,13 @@ function LucidUI.Window:_buildCustomThemeSettings()
             s.frame.BackgroundColor3 = self._customTheme[s.key]
         end
         self:ApplyCustomTheme()
+        self._refreshSwatches()
         LucidUI:Notify({ Title = "Reset", Message = "Custom theme reset to Default" })
     end)
 
     mkActionBtn("Apply Custom", self.Theme.Accent, function()
         self:ApplyCustomTheme()
+        self._refreshSwatches()
         LucidUI:Notify({ Title = "Applied", Message = "Custom theme active" })
     end)
 
@@ -934,6 +993,7 @@ function LucidUI.Window:_buildSavedThemesSettings()
                 Tween(savedRow, 0.22, { Size = UDim2.new(1, 0, 0, 40) }):Play()
                 Tween(savedArrow, 0.2, { Rotation = 0 }):Play()
                 self:LoadCustomTheme(themeName)
+                if self._refreshSwatches then pcall(self._refreshSwatches) end
             end)
 
             BindTap(delBtn, function()
