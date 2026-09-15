@@ -1,12 +1,18 @@
 --[[
-    Settings B — background image, configs, about, BuildSettingsPanel.
-    Includes an improved auto-accent detector using hue-bucket
-    analysis on saturated pixels.
+    Settings B — background image, keybinds, configs, about,
+    BuildSettingsPanel. Includes an improved auto-accent detector
+    using hue-bucket analysis on saturated pixels.
 
     Click handling:
       Every click goes through BindTap (from 01b_polish.lua). The
       image-transparency slider keeps InputBegan/InputChanged because
       drag IS its interaction model.
+
+    Keybind capture:
+      The pill-toggle keybind row uses a stateful listener. While
+      capturing, LucidUI._keyListening is true so the window's global
+      keybind handler ignores keystrokes. The listener is cancelled
+      if the settings panel closes (see 06_window.lua).
 ]]
 
 function LucidUI.Window:_buildBackgroundSettings()
@@ -135,7 +141,6 @@ function LucidUI.Window:_buildBackgroundSettings()
         Text = "", BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0), Parent = transTrack,
     })
 
-    -- Transparency slider — drag interaction, keeps InputBegan/InputChanged.
     local active = false
     local function setTrans(input)
         local rel = math.clamp((input.Position.X - transTrack.AbsolutePosition.X) / transTrack.AbsoluteSize.X, 0, 1)
@@ -263,7 +268,6 @@ end
 -- Improved auto-accent: hue histogram on saturated pixels
 -- ============================================================
 function LucidUI.Window:AutoDetectAccent(url)
-    -- Resolve the URL to something EditableImage can load
     local imageId = url
     if url:match("^https?://") then
         print("[LucidUI] AutoAccent: downloading image first")
@@ -292,7 +296,6 @@ function LucidUI.Window:AutoDetectAccent(url)
         return nil
     end
 
-    -- Wait up to 3 seconds for the image to actually load
     local size
     for _ = 1, 60 do
         local ok2, s = pcall(function() return img.Size end)
@@ -308,11 +311,9 @@ function LucidUI.Window:AutoDetectAccent(url)
     end
     print("[LucidUI] AutoAccent: image size", size.X, "x", size.Y)
 
-    -- Sample on a grid
     local stepX = math.max(1, math.floor(size.X / 40))
     local stepY = math.max(1, math.floor(size.Y / 40))
 
-    -- Collect valid samples: skip transparent, near-black, near-white, low-saturation
     local samples = {}
     for y = 0, size.Y - 1, stepY do
         for x = 0, size.X - 1, stepX do
@@ -327,7 +328,6 @@ function LucidUI.Window:AutoDetectAccent(url)
                     local c = Color3.new(r, g, b)
                     local h, s, v = Color3.toHSV(c)
 
-                    -- Skip near-black, near-white, and very desaturated pixels
                     if v > 0.12 and v < 0.94 and s > 0.15 then
                         table.insert(samples, {
                             r = r, g = g, b = b,
@@ -346,7 +346,6 @@ function LucidUI.Window:AutoDetectAccent(url)
     end
     print("[LucidUI] AutoAccent: collected", #samples, "samples")
 
-    -- Bucket hues into 36 bins of 10° each
     local bins = {}
     for i = 1, 36 do
         bins[i] = { weight = 0, rSum = 0, gSum = 0, bSum = 0 }
@@ -362,7 +361,6 @@ function LucidUI.Window:AutoDetectAccent(url)
         bins[bin].bSum = bins[bin].bSum + s.b * s.weight
     end
 
-    -- Find peak with neighbor smoothing (wraps around the hue circle)
     local bestBin, bestScore = 1, -1
     for i = 1, 36 do
         local prev = ((i - 2) % 36) + 1
@@ -386,7 +384,6 @@ function LucidUI.Window:AutoDetectAccent(url)
         best.bSum / best.weight
     )
 
-    -- Boost saturation and clamp brightness for a vivid but not eye-searing accent
     local h, s, v = Color3.toHSV(avg)
     s = math.min(s * 1.6, 1)
     v = math.clamp(v, 0.70, 0.95)
@@ -396,6 +393,104 @@ function LucidUI.Window:AutoDetectAccent(url)
         math.floor(final.R*255), math.floor(final.G*255), math.floor(final.B*255),
         h, s, v))
     return final
+end
+
+-- ============================================================
+-- Keybinds — global hotkeys that work on desktop
+-- ============================================================
+function LucidUI.Window:_buildKeybindSettings()
+    self:_addSettingSection("Keybinds")
+
+    local row = Create("Frame", {
+        BackgroundColor3 = self.Theme.Surface,
+        BackgroundTransparency = self.Theme.SurfaceTrans,
+        Size = UDim2.new(1, 0, 0, 44),
+    })
+    Corner(10, row)
+    self:_addSettingFrame(row)
+
+    Create("TextLabel", {
+        Text = "Minimize to Pill",
+        Font = Enum.Font.GothamMedium, TextSize = 14,
+        TextColor3 = self.Theme.TextPrimary, BackgroundTransparency = 1,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Position = UDim2.fromOffset(14, 0),
+        Size = UDim2.new(1, -120, 1, 0),
+        Parent = row,
+    })
+
+    local keyBox = Create("TextButton", {
+        Text = self.PillKeybind and self.PillKeybind.Name or "Home",
+        Font = Enum.Font.GothamBold, TextSize = 12,
+        TextColor3 = self.Theme.TextPrimary,
+        BackgroundColor3 = self.Theme.Background,
+        BackgroundTransparency = 0.3,
+        AutoButtonColor = false,
+        Size = UDim2.fromOffset(90, 26),
+        Position = UDim2.new(1, -104, 0.5, -13),
+        Parent = row,
+    })
+    Corner(8, keyBox)
+
+    local listenConn = nil
+
+    local function stopListening()
+        if listenConn then listenConn:Disconnect() listenConn = nil end
+        keyBox.Text = self.PillKeybind and self.PillKeybind.Name or "Home"
+        keyBox.BackgroundColor3 = self.Theme.Background
+        LucidUI._keyListening = false
+        self._cancelKeybindListen = nil
+    end
+
+    -- Expose cancel so ToggleSettings(false) can clean up.
+    self._cancelKeybindListen = stopListening
+
+    local function startListening()
+        if LucidUI._keyListening then return end
+        LucidUI._keyListening = true
+        keyBox.Text = "..."
+        keyBox.BackgroundColor3 = self.Theme.Accent
+        PlayUISound("click")
+
+        listenConn = UserInputService.InputBegan:Connect(function(input, processed)
+            if processed then return end
+            if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+
+            -- Escape cancels without changing the keybind
+            if input.KeyCode == Enum.KeyCode.Escape then
+                stopListening()
+                return
+            end
+
+            self.PillKeybind = input.KeyCode
+            self._configData["pill_keybind"] = input.KeyCode.Name
+            stopListening()
+            LucidUI:Notify({
+                Title = "Keybind Set",
+                Message = "Pill toggle: " .. input.KeyCode.Name,
+            })
+        end)
+    end
+
+    BindTap(keyBox, startListening)
+
+    -- Clicking elsewhere while listening cancels the capture.
+    table.insert(self._conns, UserInputService.InputBegan:Connect(function(input, processed)
+        if not LucidUI._keyListening then return end
+        if listenConn == nil then return end
+        if input.UserInputType == Enum.UserInputType.Touch
+            or input.UserInputType == Enum.UserInputType.MouseButton1 then
+            if not processed then stopListening() end
+        end
+    end))
+
+    self:_registerTheme(function(t)
+        row.BackgroundColor3 = t.Surface
+        if not LucidUI._keyListening then
+            keyBox.BackgroundColor3 = t.Background
+            keyBox.TextColor3 = t.TextPrimary
+        end
+    end)
 end
 
 -- ============================================================
@@ -460,7 +555,7 @@ function LucidUI.Window:_buildConfigSettings()
                 Size = UDim2.new(1, 0, 0, 32), LayoutOrder = i, Parent = list,
             })
             Corner(8, opt)
-            local configName = name  -- capture per iteration
+            local configName = name
             BindTap(opt, function()
                 self._currentConfig = configName
                 slotLabel.Text = configName
@@ -609,6 +704,7 @@ function LucidUI.Window:BuildSettingsPanel()
     self:_buildCustomThemeSettings()
     self:_buildSavedThemesSettings()
     self:_buildBackgroundSettings()
+    self:_buildKeybindSettings()
     self:_buildConfigSettings()
     self:_buildAboutSettings()
 end
@@ -624,6 +720,7 @@ function LucidUI.Window:SaveConfig(profileName)
         customTheme = self._customTheme and Compat.serializeColors(self._customTheme) or nil,
         backgroundUrl = self._backgroundUrl,
         bgTransparency = self._bgTransparency,
+        pillKeybind = self.PillKeybind and self.PillKeybind.Name or nil,
         elements = self._configData,
     }
     local encoded = Compat.encode(data)
@@ -677,6 +774,10 @@ function LucidUI.Window:LoadConfig(profileName)
     end
     if data.bgTransparency then self._bgTransparency = data.bgTransparency end
     if data.backgroundUrl then self:SetBackgroundImage(data.backgroundUrl) end
+    if data.pillKeybind then
+        local key = Enum.KeyCode[data.pillKeybind]
+        if key then self.PillKeybind = key end
+    end
     local applied = 0
     if data.elements then
         for flag, value in pairs(data.elements) do
