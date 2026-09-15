@@ -1,5 +1,10 @@
 --[[
     Settings A — theme dropdown, custom theme editor, saved themes.
+
+    Click handling:
+      Every click goes through BindTap (from 01b_polish.lua). The
+      color picker sliders keep InputBegan/InputChanged because drag
+      IS their interaction model.
 ]]
 
 function LucidUI.Window:_addSettingFrame(frame)
@@ -189,18 +194,21 @@ function LucidUI.Window:_buildThemeSettings()
             opt.MouseLeave:Connect(function()
                 Tween(opt, 0.12, { BackgroundColor3 = self.Theme.Background, BackgroundTransparency = 0.5 }):Play()
             end)
-            opt.MouseButton1Click:Connect(function()
-                valueLbl.Text = name
+
+            local themeName = name  -- capture per iteration
+            BindTap(opt, function()
+                valueLbl.Text = themeName
                 expanded = false
                 Tween(list, 0.22, { Size = UDim2.new(1, -20, 0, 0) }):Play()
                 Tween(row, 0.22, { Size = UDim2.new(1, 0, 0, 40) }):Play()
                 Tween(arrowLbl, 0.2, { Rotation = 0 }):Play()
-                if name == "Custom" then
+                if themeName == "Custom" then
                     self:ApplyCustomTheme()
                 else
-                    self:SetTheme(name)
+                    self:SetTheme(themeName)
                 end
             end)
+
             table.insert(optionBtns, opt)
         end
     end
@@ -208,7 +216,7 @@ function LucidUI.Window:_buildThemeSettings()
     buildOptions()
     self._themeDropdownRefresh = function() if expanded then buildOptions() end end
 
-    headerBtn.MouseButton1Click:Connect(function()
+    BindTap(headerBtn, function()
         expanded = not expanded
         if expanded then buildOptions() end
         local h = #optionBtns * 36 + 8
@@ -279,6 +287,8 @@ function LucidUI.Window:_buildCustomThemeSettings()
             self:ApplyCustomTheme()
         end
 
+        -- Color picker sliders — these keep InputBegan/InputChanged
+        -- because dragging is their interaction model.
         for i, ch in ipairs({ "R", "G", "B" }) do
             local y = 32 + (i - 1) * 20
             Create("TextLabel", {
@@ -343,7 +353,7 @@ function LucidUI.Window:_buildCustomThemeSettings()
             Size = UDim2.new(0.5, -3, 1, 0), Parent = actionRow,
         })
         Corner(8, b)
-        b.MouseButton1Click:Connect(cb)
+        BindTap(b, cb, { MoveThreshold = 8 })
         return b
     end
 
@@ -389,7 +399,7 @@ function LucidUI.Window:_buildCustomThemeSettings()
         Size = UDim2.fromOffset(100, 26), Position = UDim2.new(1, -114, 0.5, -13), Parent = saveRow,
     })
     Corner(8, saveBtn)
-    saveBtn.MouseButton1Click:Connect(function()
+    BindTap(saveBtn, function()
         local name = nameBox.Text
         if name == "" then
             LucidUI:Notify({ Title = "Invalid", Message = "Enter a theme name", Accent = Color3.fromRGB(255,80,80) })
@@ -397,7 +407,7 @@ function LucidUI.Window:_buildCustomThemeSettings()
         end
         self:SaveCustomTheme(name)
         nameBox.Text = ""
-    end)
+    end, { MoveThreshold = 8 })
 
     self:_registerTheme(function(t)
         for _, r in ipairs(editorRows) do r.BackgroundColor3 = t.Surface end
@@ -520,20 +530,21 @@ function LucidUI.Window:_buildSavedThemesSettings()
                 ZIndex = 3, Parent = rowWrap,
             })
 
-            nameBtn.MouseButton1Click:Connect(function()
+            local themeName = name  -- capture per iteration
+            BindTap(nameBtn, function()
                 savedExpanded = false
                 Tween(savedList, 0.22, { Size = UDim2.new(1, -20, 0, 0) }):Play()
                 Tween(savedRow, 0.22, { Size = UDim2.new(1, 0, 0, 40) }):Play()
                 Tween(savedArrow, 0.2, { Rotation = 0 }):Play()
-                self:LoadCustomTheme(name)
+                self:LoadCustomTheme(themeName)
             end)
 
-            delBtn.MouseButton1Click:Connect(function()
-                Compat.delete("LucidUI/Themes/" .. name .. ".json")
-                if self.ThemeName == name then self:SetTheme("Default") end
+            BindTap(delBtn, function()
+                Compat.delete("LucidUI/Themes/" .. themeName .. ".json")
+                if self.ThemeName == themeName then self:SetTheme("Default") end
                 rebuildSaved()
-                LucidUI:Notify({ Title = "Deleted", Message = name })
-            end)
+                LucidUI:Notify({ Title = "Deleted", Message = themeName })
+            end, { MoveThreshold = 8 })
 
             nameBtn.MouseEnter:Connect(function()
                 Tween(rowWrap, 0.12, { BackgroundColor3 = self.Theme.Accent, BackgroundTransparency = 0.3 }):Play()
@@ -548,7 +559,7 @@ function LucidUI.Window:_buildSavedThemesSettings()
 
     self._savedThemeSlotsRefresh = rebuildSaved
 
-    savedHeader.MouseButton1Click:Connect(function()
+    BindTap(savedHeader, function()
         savedExpanded = not savedExpanded
         rebuildSaved()
         Tween(savedArrow, 0.2, { Rotation = savedExpanded and 180 or 0 }):Play()
