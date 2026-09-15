@@ -6,17 +6,18 @@
       pointer goes down and up within ~12 px of movement.
 
     Theme handling:
-      Hover and press handlers read `win.Theme` at call time, not at
-      creation time. This means switching themes mid-session updates
-      the hover color, the leave color, and the glow accent live.
+      Hover and press handlers read `win.Theme` at call time.
 
-    Slider animation:
-      • Row highlights on hover
-      • Handle grows 18 → 20 on hover, 20 → 22 on grab
-      • Grab adds a soft glow ring around the handle
-      • :Set() animates fill and handle instead of snapping
-      • Value label briefly flashes white then fades back to accent
-        every time the value changes
+    Slider:
+      • Visual position is driven by a RenderStepped lerp loop, not by
+        direct assignment. The handle and fill ease toward the target
+        instead of snapping.
+      • During drag: fast catch-up so it still tracks the finger.
+      • On :Set(): slower catch-up so config loads slide smoothly.
+      • While dragging, the nearest ScrollingFrame ancestor has
+        ScrollingEnabled = false so the page doesn't scroll under you.
+      • Handle grows 18 → 20 on hover, 20 → 22 on grab.
+      • Value label flashes white on each integer step change.
 ]]
 
 -- ============================================================
@@ -221,7 +222,7 @@ function LucidUI.Section:CreateToggle(config)
 end
 
 -- ============================================================
--- Slider — animated
+-- Slider — eased motion + scroll lock while dragging
 -- ============================================================
 function LucidUI.Section:CreateSlider(config)
     config = config or {}
@@ -312,26 +313,48 @@ function LucidUI.Section:CreateSlider(config)
         Parent = track,
     })
 
+    -- ── Eased motion ────────────────────────────────────────────
+    -- targetRel is where we want the handle to be (0..1). displayRel
+    -- is where it currently is. The RenderStepped loop lerps one
+    -- toward the other with a frame-rate-independent curve.
+    local targetRel  = (value - min) / (max - min)
+    local displayRel = targetRel
+
+    -- Catch-up rates (per-second exponential factor). Higher = snappier.
+    local DRAG_SPEED = 30   -- while the user is dragging
+    local SET_SPEED  = 12   -- on programmatic :Set()
+
     local dragging = false
     local hovering = false
-    local flashConn = nil
 
-    -- ── Value flash ───────────────────────────────────────────
-    -- Briefly white, then fade back to accent. Used on every
-    -- value change (drag or programmatic).
-    local function flashValue()
-        if flashConn then flashConn:Disconnect() flashConn = nil end
+    -- ── Scroll lock ─────────────────────────────────────────────
+    -- Walk up the parent chain to find any ScrollingFrame. While
+    -- dragging, disable its scrolling so the page doesn't move.
+    local scrollAncestor = nil
+    do
+        local p = row.Parent
+        while p do
+            if p:IsA("ScrollingFrame") then
+                scrollAncestor = p
+                break
+            end
+            p = p.Parent
+        end
+    end
+
+    -- ── Value flash ─────────────────────────────────────────────
+    local lastFlashedValue = value
+    local flashTween = nil
+    local function flashIfChanged()
+        if value == lastFlashedValue then return end
+        lastFlashedValue = value
+        if flashTween then pcall(function() flashTween:Cancel() end) end
         valueLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-        flashConn = Tween(valueLabel, 0.35, { TextColor3 = win.Theme.Accent })
-        flashConn:Play()
+        flashTween = Tween(valueLabel, 0.32, { TextColor3 = win.Theme.Accent })
+        flashTween:Play()
     end
 
-    -- ── Handle sizing helper ──────────────────────────────────
-    local function setHandleSize(size)
-        Tween(handle, 0.14, { Size = UDim2.fromOffset(size, size) }, Enum.EasingStyle.Quart):Play()
-    end
-
-    -- ── Snap-to-input (used while dragging) ───────────────────
+    -- ── Input → target ──────────────────────────────────────────
     local function setFromInput(input)
         local rel = math.clamp(
             (input.Position.X - track.AbsolutePosition.X) / track.AbsoluteSize.X,
@@ -340,21 +363,32 @@ function LucidUI.Section:CreateSlider(config)
         local raw = min + (max - min) * rel
         value = math.floor((raw / inc) + 0.5) * inc
         value = math.clamp(value, min, max)
-        fill.Size = UDim2.new((value - min) / (max - min), 0, 1, 0)
-        handle.Position = UDim2.new((value - min) / (max - min), 0, 0.5, 0)
+        targetRel = (value - min) / (max - min)
         valueLabel.Text = tostring(value)
+        flashIfChanged()
     end
 
+    -- ── Handle size helper ──────────────────────────────────────
+    local function setHandleSize(size)
+        Tween(handle, 0.14, { Size = UDim2.fromOffset(size, size) }, Enum.EasingStyle.Quart):Play()
+    end
+
+    -- ── Grab / release ──────────────────────────────────────────
     drag.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1
             or input.UserInputType == Enum.UserInputType.Touch then
             if LucidUI._activeSlider and LucidUI._activeSlider ~= drag then return end
             LucidUI._activeSlider = drag
             dragging = true
+
+            -- Lock the parent scroll frame so the page freezes
+            if scrollAncestor then
+                scrollAncestor.ScrollingEnabled = false
+            end
+
             setHandleSize(HANDLE_GRAB)
             Tween(handleStroke, 0.12, { Transparency = 0.35 }):Play()
             setFromInput(input)
-            flashValue()
             if flag then win._configData[flag] = value end
             if config.Callback then pcall(config.Callback, value) end
         end
@@ -365,7 +399,6 @@ function LucidUI.Section:CreateSlider(config)
         if input.UserInputType == Enum.UserInputType.MouseMovement
             or input.UserInputType == Enum.UserInputType.Touch then
             setFromInput(input)
-            flashValue()
             if flag then win._configData[flag] = value end
             if config.Callback then pcall(config.Callback, value) end
         end
@@ -375,13 +408,20 @@ function LucidUI.Section:CreateSlider(config)
         if input.UserInputType == Enum.UserInputType.MouseButton1
             or input.UserInputType == Enum.UserInputType.Touch then
             if LucidUI._activeSlider == drag then LucidUI._activeSlider = nil end
+            if not dragging then return end
             dragging = false
+
+            -- Restore the scroll frame
+            if scrollAncestor then
+                scrollAncestor.ScrollingEnabled = true
+            end
+
             setHandleSize(hovering and HANDLE_HOVER or HANDLE_BASE)
             Tween(handleStroke, 0.18, { Transparency = 0.7 }):Play()
         end
     end))
 
-    -- ── Hover state ──────────────────────────────────────────
+    -- ── Hover ───────────────────────────────────────────────────
     drag.MouseEnter:Connect(function()
         hovering = true
         local t = win.Theme
@@ -398,7 +438,32 @@ function LucidUI.Section:CreateSlider(config)
         if not dragging then setHandleSize(HANDLE_BASE) end
     end)
 
-    -- ── Theme registration ────────────────────────────────────
+    -- ── Eased render loop ───────────────────────────────────────
+    -- Frame-rate-independent exponential lerp:
+    --   alpha = 1 - exp(-speed * dt)
+    -- displayRel = displayRel + (targetRel - displayRel) * alpha
+    table.insert(win._conns, RunService.RenderStepped:Connect(function(dt)
+        if not fill.Parent or not handle.Parent then return end
+
+        local diff = targetRel - displayRel
+        if math.abs(diff) < 0.0004 then
+            if displayRel ~= targetRel then
+                displayRel = targetRel
+                fill.Size       = UDim2.new(displayRel, 0, 1, 0)
+                handle.Position = UDim2.new(displayRel, 0, 0.5, 0)
+            end
+            return
+        end
+
+        local speed = dragging and DRAG_SPEED or SET_SPEED
+        local alpha = 1 - math.exp(-speed * dt)
+        displayRel = displayRel + diff * alpha
+
+        fill.Size       = UDim2.new(displayRel, 0, 1, 0)
+        handle.Position = UDim2.new(displayRel, 0, 0.5, 0)
+    end))
+
+    -- ── Theme ───────────────────────────────────────────────────
     win:_registerTheme(function(t)
         row.BackgroundColor3   = t.Surface
         nameLabel.TextColor3   = t.TextPrimary
@@ -409,19 +474,16 @@ function LucidUI.Section:CreateSlider(config)
         handleStroke.Color     = t.Border
     end)
 
-    -- ── Programmatic set — animated ───────────────────────────
+    -- ── Programmatic set ────────────────────────────────────────
     local obj = {
         Instance = row,
         Flag = flag,
         Set = function(_, v)
             v = math.clamp(v, min, max)
             value = v
-            local targetFill   = UDim2.new((value - min) / (max - min), 0, 1, 0)
-            local targetHandle = UDim2.new((value - min) / (max - min), 0, 0.5, 0)
-            Tween(fill, 0.24, { Size = targetFill }, Enum.EasingStyle.Quart):Play()
-            Tween(handle, 0.24, { Position = targetHandle }, Enum.EasingStyle.Quart):Play()
+            targetRel = (value - min) / (max - min)
             valueLabel.Text = tostring(value)
-            flashValue()
+            flashIfChanged()
             if flag then win._configData[flag] = value end
         end,
         Get = function() return value end,
