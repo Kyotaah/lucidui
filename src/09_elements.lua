@@ -2,67 +2,15 @@
     Elements — interactive widgets.
 
     Click handling:
-      AttachSafeClick(window, element, callback) — fires only when the
-      press STARTED on the element and the release is still inside it.
-      The press lock is per-window (window._pressOwner), so multiple
-      windows don't fight over the same flag and destroying one window
-      releases only its own lock.
+      BindTap (from 01b_polish.lua) fires the callback only when the
+      pointer goes down and up within ~12 px of movement. This solves
+      the mobile problem where sliding a finger across a ScrollingFrame
+      (or just across a button) fired a click on release.
 
-      Toggles, sliders, dropdown headers/rows, and keybinds use plain
-      MouseButton1Down because they don't need drag-isolation.
+      Sliders use InputBegan + InputChanged because dragging IS their
+      interaction model. Everything else — buttons, toggles, dropdown
+      headers and rows, keybind boxes — goes through BindTap.
 ]]
-
-local function AttachSafeClick(window, element, callback)
-    local isPressed = false
-    local inside    = false
-
-    element.InputBegan:Connect(function(input)
-        if input.UserInputType ~= Enum.UserInputType.MouseButton1
-            and input.UserInputType ~= Enum.UserInputType.Touch then return end
-
-        if window._pressOwner and window._pressOwner ~= element then return end
-
-        if not window._pressOwner then
-            window._pressOwner = element
-            inside = true
-        end
-        isPressed = true
-    end)
-
-    element.MouseLeave:Connect(function()
-        inside = false
-    end)
-
-    element.MouseEnter:Connect(function()
-        if isPressed and window._pressOwner == element then
-            inside = true
-        end
-    end)
-
-    UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType ~= Enum.UserInputType.MouseButton1
-            and input.UserInputType ~= Enum.UserInputType.Touch then return end
-
-        if window._pressOwner == element then
-            window._pressOwner = nil
-            if isPressed and inside and callback then
-                pcall(callback)
-            end
-        end
-        isPressed = false
-        inside    = false
-    end)
-end
-
--- Watchdog: if a window's _pressOwner points at a destroyed element, clear it.
-RunService.Heartbeat:Connect(function()
-    for _, w in ipairs(LucidUI._windows) do
-        local owner = w._pressOwner
-        if owner and not owner.Parent then
-            w._pressOwner = nil
-        end
-    end
-end)
 
 -- ============================================================
 -- Button
@@ -95,12 +43,39 @@ function LucidUI.Section:CreateButton(config)
         Parent = btn,
     })
 
-    AttachRipple(btn)
     AttachHoverGlow(btn, theme.Accent)
     AttachHoverSound(btn)
-    AttachSafeClick(win, btn, function()
+
+    -- Capture the press position so the ripple spawns where the finger
+    -- actually landed, not where it lifted (they can differ by a few px
+    -- even on a clean tap).
+    local pressPos = Vector2.new()
+
+    BindTap(btn, function()
+        local abs = btn.AbsolutePosition
+        SpawnRipple(btn, pressPos.X - abs.X, pressPos.Y - abs.Y)
         PlayUISound("click")
         if config.Callback then pcall(config.Callback) end
+    end, {
+        OnDown = function(input)
+            pressPos = input.Position
+        end,
+    })
+
+    -- Press-down squish. Bound to the button's own InputBegan/InputEnded
+    -- so it only fires for presses that started on this button, and it
+    -- un-squishes when that specific press ends anywhere on screen.
+    btn.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
+            Tween(btn, 0.08, { Size = UDim2.new(0.97, 0, 0, 34) }):Play()
+        end
+    end)
+    btn.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
+            Tween(btn, 0.15, { Size = UDim2.new(1, 0, 0, 36) }):Play()
+        end
     end)
 
     btn.MouseEnter:Connect(function()
@@ -115,18 +90,6 @@ function LucidUI.Section:CreateButton(config)
             BackgroundTransparency = theme.SurfaceTrans,
             Size = UDim2.new(1, 0, 0, 36),
         }):Play()
-    end)
-    btn.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-            or input.UserInputType == Enum.UserInputType.Touch then
-            Tween(btn, 0.08, { Size = UDim2.new(0.97, 0, 0, 34) }):Play()
-        end
-    end)
-    UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-            or input.UserInputType == Enum.UserInputType.Touch then
-            Tween(btn, 0.15, { Size = UDim2.new(1, 0, 0, 36) }):Play()
-        end
     end)
 
     win:_registerTheme(function(t)
@@ -214,7 +177,7 @@ function LucidUI.Section:CreateToggle(config)
         if not silent and config.Callback then pcall(config.Callback, state) end
     end
 
-    clickArea.MouseButton1Down:Connect(function()
+    BindTap(clickArea, function()
         PlayUISound("click")
         update(not state)
     end)
@@ -530,7 +493,7 @@ function LucidUI.Section:CreateDropdown(config)
             }):Play()
         end)
 
-        optBtn.MouseButton1Down:Connect(function()
+        BindTap(optBtn, function()
             value = opt
             valueLabel.Text = tostring(opt)
             expanded = false
@@ -545,7 +508,7 @@ function LucidUI.Section:CreateDropdown(config)
         table.insert(optionBtns, optBtn)
     end
 
-    headerBtn.MouseButton1Down:Connect(function()
+    BindTap(headerBtn, function()
         expanded = not expanded
         local openH = #options * (OPT_H + OPT_P) + 8
         Tween(list, 0.22, {
@@ -660,7 +623,7 @@ function LucidUI.Section:CreateKeybind(config)
         end)
     end
 
-    keyBox.MouseButton1Down:Connect(startListening)
+    BindTap(keyBox, startListening)
 
     table.insert(win._conns, UserInputService.InputBegan:Connect(function(input, processed)
         if not LucidUI._keyListening then return end
