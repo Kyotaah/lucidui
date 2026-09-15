@@ -1,5 +1,14 @@
 --[[
     Window — creates the main window and every layer that sits inside it.
+
+    Click handling:
+      Every actual click goes through BindTap (from 01b_polish.lua).
+      Drag interactions — window header, resize handle, floating pill —
+      stay on InputBegan/InputChanged because dragging IS their purpose.
+
+      The floating pill uses BindTap for restore, which replaces the
+      old _pillMoved workaround: a drag now simply never fires the
+      callback, so no manual "did the pill move?" check is needed.
 ]]
 
 LucidUI.Window = {}
@@ -38,7 +47,6 @@ function LucidUI:CreateWindow(config)
     W._themeElements  = {}
     W._conns          = {}
     W._accentOverride = nil
-    W._pressOwner     = nil
 
     W._minWidth,  W._minHeight = 320, 240
     W._maxWidth,  W._maxHeight = 1200, 900
@@ -139,7 +147,8 @@ function LucidUI:CreateWindow(config)
         gearRing.Rotation = gearRot
     end))
 
-    settingsBtn.MouseButton1Click:Connect(function() W:ToggleSettings() end)
+    BindTap(settingsBtn, function() W:ToggleSettings() end)
+
     settingsBtn.MouseEnter:Connect(function()
         for _, p in ipairs(gearParts) do
             Tween(p, 0.15, { BackgroundColor3 = W.Theme.Accent }):Play()
@@ -179,7 +188,8 @@ function LucidUI:CreateWindow(config)
         Parent = minBtn,
     })
 
-    minBtn.MouseButton1Click:Connect(function() W:SetMinimized(not W.Minimized) end)
+    BindTap(minBtn, function() W:SetMinimized(not W.Minimized) end, { MoveThreshold = 8 })
+
     minBtn.MouseEnter:Connect(function()
         Tween(minBtn, 0.15, { BackgroundColor3 = Color3.fromRGB(255, 214, 100) }):Play()
         Tween(minDot, 0.15, { TextTransparency = 0 }):Play()
@@ -213,7 +223,8 @@ function LucidUI:CreateWindow(config)
         Parent = closeBtn,
     })
 
-    closeBtn.MouseButton1Click:Connect(function() W:MinimizeToPill() end)
+    BindTap(closeBtn, function() W:MinimizeToPill() end, { MoveThreshold = 8 })
+
     closeBtn.MouseEnter:Connect(function()
         Tween(closeBtn, 0.15, { BackgroundColor3 = Color3.fromRGB(255, 130, 120) }):Play()
         Tween(closeDot, 0.15, { TextTransparency = 0 }):Play()
@@ -268,6 +279,9 @@ function LucidUI:CreateWindow(config)
         Parent = W.Main,
     })
 
+    -- ============================================================
+    -- Window drag (header)
+    -- ============================================================
     local dragging, dragStart, startPos = false, nil, nil
 
     W.Header.InputBegan:Connect(function(input)
@@ -301,6 +315,9 @@ function LucidUI:CreateWindow(config)
         end
     end))
 
+    -- ============================================================
+    -- Resize handle
+    -- ============================================================
     local resizeHandle = Create("TextButton", {
         Text = "",
         BackgroundTransparency = 1,
@@ -373,6 +390,9 @@ function LucidUI:CreateWindow(config)
         end
     end))
 
+    -- ============================================================
+    -- Global keybind: RightShift toggles visibility
+    -- ============================================================
     table.insert(W._conns, UserInputService.InputBegan:Connect(function(input, processed)
         if processed then return end
         if input.KeyCode == Enum.KeyCode.RightShift then
@@ -384,6 +404,9 @@ function LucidUI:CreateWindow(config)
         end
     end))
 
+    -- ============================================================
+    -- Settings panel
+    -- ============================================================
     W.SettingsPanel = Create("CanvasGroup", {
         Name = "SettingsPanel",
         Size = UDim2.new(1, 0, 1, -45),
@@ -423,7 +446,8 @@ function LucidUI:CreateWindow(config)
         ZIndex = 7,
         Parent = backBtn,
     })
-    backBtn.MouseButton1Click:Connect(function() W:ToggleSettings(false) end)
+
+    BindTap(backBtn, function() W:ToggleSettings(false) end, { MoveThreshold = 8 })
 
     Create("TextLabel", {
         Text = "Settings",
@@ -476,6 +500,9 @@ function LucidUI:CreateWindow(config)
     W._settingsOrder = 0
     W._backArrowLbl  = backLbl
 
+    -- ============================================================
+    -- Floating pill
+    -- ============================================================
     W.FloatingPill = Create("TextButton", {
         Name = "FloatingPill",
         Text = "",
@@ -512,6 +539,7 @@ function LucidUI:CreateWindow(config)
         Parent = W.FloatingPill,
     })
 
+    -- Pill drag
     local pillDragging, pillDragStart, pillStartPos = false, nil, nil
 
     W.FloatingPill.InputBegan:Connect(function(input)
@@ -528,9 +556,6 @@ function LucidUI:CreateWindow(config)
         if input.UserInputType == Enum.UserInputType.MouseMovement
             or input.UserInputType == Enum.UserInputType.Touch then
             local d = input.Position - pillDragStart
-            if math.abs(d.X) > 5 or math.abs(d.Y) > 5 then
-                W._pillMoved = true
-            end
             W.FloatingPill.Position = UDim2.new(
                 pillStartPos.X.Scale, pillStartPos.X.Offset + d.X,
                 pillStartPos.Y.Scale, pillStartPos.Y.Offset + d.Y
@@ -548,13 +573,11 @@ function LucidUI:CreateWindow(config)
         end
     end))
 
-    W.FloatingPill.MouseButton1Click:Connect(function()
-        if W._pillMoved then
-            W._pillMoved = false
-            return
-        end
+    -- Pill tap (restore). BindTap already filters drags out, so no
+    -- _pillMoved flag is needed.
+    BindTap(W.FloatingPill, function()
         W:RestoreFromPill()
-    end)
+    end, { MoveThreshold = 8 })
 
     table.insert(LucidUI._windows, W)
 
@@ -677,8 +700,8 @@ function LucidUI.Window:ToggleSettings(state)
         TweenService:Create(self.SettingsPanel, Ease.Out(0.38), { Position = SHOWN }):Play()
         TweenService:Create(self.SettingsPanel, Ease.FadeIn(0.32), { GroupTransparency = 0 }):Play()
 
-                if self._themeSlotsRefresh      then pcall(self._themeSlotsRefresh) end
-                if self._themeDropdownRefresh   then pcall(self._themeDropdownRefresh) end
+        if self._themeSlotsRefresh    then pcall(self._themeSlotsRefresh) end
+        if self._themeDropdownRefresh then pcall(self._themeDropdownRefresh) end
     else
         local slide = TweenService:Create(self.SettingsPanel, Ease.In(0.26), { Position = HIDDEN })
         slide:Play()
@@ -703,11 +726,6 @@ function LucidUI.Window:Destroy()
         if typeof(c) == "RBXScriptConnection" then c:Disconnect() end
     end
     self._conns = {}
-
-    -- Release the press lock if this window owns it
-    if self._pressOwner then
-        self._pressOwner = nil
-    end
 
     -- Clear the slider lock if this window owns it
     if LucidUI._activeSlider and LucidUI._activeSlider.Parent == self.Gui then
