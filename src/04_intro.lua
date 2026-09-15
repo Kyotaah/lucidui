@@ -158,13 +158,14 @@ function LucidUI:ShowIntro(opts)
     })
     Corner(999, blobShine)
     Create("UIGradient", {
-        Transparency = NumberSequence.new({
-            NumberSequenceKeypoint.new(0, 0),
-            NumberSequenceKeypoint.new(0.7, 1),
-        }),
-        Rotation = 135,
-        Parent = blobShine,
-    })
+    Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0.0, 0),
+        NumberSequenceKeypoint.new(0.7, 1),
+        NumberSequenceKeypoint.new(1.0, 1),
+    }),
+    Rotation = 135,
+    Parent = blobShine,
+})
 
     -- ── Card ───────────────────────────────────────────────────
     local CARD_W, CARD_H = 400, 240
