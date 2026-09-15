@@ -1,6 +1,13 @@
 --[[
     Helpers — services, easing, instance constructors, glass rendering,
     viewport utilities. Polish helpers live in 01b_polish.lua.
+
+    ApplyGlass now produces a layered glass effect:
+      • Base tinted translucent background
+      • Bright top-edge highlight (light refracting off the rim)
+      • Diagonal specular sheen (glass catching light from top-left)
+      • Subtle bottom-edge shade (grounding the panel)
+    Roblox has no backdrop blur, so this approximates the look.
 ]]
 
 local Players          = game:GetService("Players")
@@ -70,19 +77,79 @@ end
 
 local function ApplyGlass(frame, theme, opts)
     opts = opts or {}
+    local radius = opts.cornerRadius or 18
+
     frame.BackgroundColor3       = theme.Background
-    frame.BackgroundTransparency = theme.BackgroundTrans or 0.15
+    frame.BackgroundTransparency = theme.BackgroundTrans or 0.35
     frame.BorderSizePixel        = 0
-    Corner(opts.cornerRadius or 16, frame)
-    Stroke(theme.Border, 1, theme.BorderTrans or 0.88, frame)
+    Corner(radius, frame)
+
+    -- Outer border: subtle, slightly more transparent than before
+    Stroke(theme.Border, 1, math.min((theme.BorderTrans or 0.85) + 0.05, 1), frame)
+
+    -- Top-edge highlight: bright at the top, fades to nothing by the middle.
+    -- Simulates light refracting off the upper rim of the glass.
+    local topHighlight = Create("Frame", {
+        Name = "GlassTopHighlight",
+        Size = UDim2.fromScale(1, 0.5),
+        Position = UDim2.fromScale(0, 0),
+        BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+        BackgroundTransparency = 0.82,
+        BorderSizePixel = 0,
+        ZIndex = 0,
+        Parent = frame,
+    })
     Create("UIGradient", {
-        Color = ColorSequence.new({
-            ColorSequenceKeypoint.new(0,   Color3.new(1, 1, 1)),
-            ColorSequenceKeypoint.new(0.5, Color3.new(0.96, 0.96, 0.96)),
-            ColorSequenceKeypoint.new(1,   Color3.new(0.88, 0.88, 0.88)),
+        Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0.0, 0.0),
+            NumberSequenceKeypoint.new(0.6, 1.0),
+            NumberSequenceKeypoint.new(1.0, 1.0),
+        }),
+        Rotation = 90,
+        Parent = topHighlight,
+    })
+
+    -- Diagonal specular sheen: brighter at top-left, invisible by bottom-right.
+    -- This is the "glass catching light" effect.
+    local sheen = Create("Frame", {
+        Name = "GlassSheen",
+        Size = UDim2.fromScale(1, 1),
+        BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+        BackgroundTransparency = 0.90,
+        BorderSizePixel = 0,
+        ZIndex = 0,
+        Parent = frame,
+    })
+    Corner(radius, sheen)
+    Create("UIGradient", {
+        Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0.0, 0.0),
+            NumberSequenceKeypoint.new(0.45, 1.0),
+            NumberSequenceKeypoint.new(1.0, 1.0),
         }),
         Rotation = 135,
+        Parent = sheen,
+    })
+
+    -- Bottom-edge shadow: subtle dark fade at the bottom.
+    -- Adds depth so the panel doesn't look like it's floating.
+    local bottomShade = Create("Frame", {
+        Name = "GlassBottomShade",
+        Size = UDim2.fromScale(1, 0.35),
+        Position = UDim2.fromScale(0, 0.65),
+        BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+        BackgroundTransparency = 0.92,
+        BorderSizePixel = 0,
+        ZIndex = 0,
         Parent = frame,
+    })
+    Create("UIGradient", {
+        Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0.0, 1.0),
+            NumberSequenceKeypoint.new(1.0, 0.2),
+        }),
+        Rotation = 90,
+        Parent = bottomShade,
     })
 end
 
