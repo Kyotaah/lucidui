@@ -106,8 +106,6 @@ function LucidUI:ShowIntro(opts)
     })
 
     -- ── Music-reactive blob ────────────────────────────────────
-    -- 360×360 base, positioned center. Anchored there so scaling
-    -- and rotation happen around the visual center.
     local BLOB_BASE = 360
     local blobWrap = Create("Frame", {
         Size = UDim2.fromOffset(BLOB_BASE, BLOB_BASE),
@@ -118,8 +116,6 @@ function LucidUI:ShowIntro(opts)
         Parent = overlay,
     })
 
-    -- Soft outer halo — expands when the core is resting,
-    -- contracts when the core stretches.
     local blobHalo = Create("Frame", {
         Size = UDim2.fromScale(1.1, 1.1),
         Position = UDim2.fromScale(0.5, 0.5),
@@ -132,7 +128,6 @@ function LucidUI:ShowIntro(opts)
     })
     Corner(999, blobHalo)
 
-    -- Main jelly body
     local blobCore = Create("Frame", {
         Size = UDim2.fromScale(1, 1),
         Position = UDim2.fromScale(0.5, 0.5),
@@ -145,7 +140,6 @@ function LucidUI:ShowIntro(opts)
     })
     Corner(999, blobCore)
 
-    -- Specular shine (top-left highlight) — the glass-bubble look
     local blobShine = Create("Frame", {
         Size = UDim2.fromScale(0.7, 0.7),
         Position = UDim2.fromScale(0.32, 0.28),
@@ -158,14 +152,14 @@ function LucidUI:ShowIntro(opts)
     })
     Corner(999, blobShine)
     Create("UIGradient", {
-    Transparency = NumberSequence.new({
-        NumberSequenceKeypoint.new(0.0, 0),
-        NumberSequenceKeypoint.new(0.7, 1),
-        NumberSequenceKeypoint.new(1.0, 1),
-    }),
-    Rotation = 135,
-    Parent = blobShine,
-})
+        Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0.0, 0),
+            NumberSequenceKeypoint.new(0.7, 1),
+            NumberSequenceKeypoint.new(1.0, 1),
+        }),
+        Rotation = 135,
+        Parent = blobShine,
+    })
 
     -- ── Card ───────────────────────────────────────────────────
     local CARD_W, CARD_H = 400, 240
@@ -204,7 +198,6 @@ function LucidUI:ShowIntro(opts)
 
     local cardScale = Create("UIScale", { Scale = 0.88, Parent = card })
 
-    -- Logo + orbit
     local LOGO_SIZE = 60
     local logoHolder = Create("Frame", {
         Size = UDim2.fromOffset(LOGO_SIZE, LOGO_SIZE),
@@ -259,7 +252,6 @@ function LucidUI:ShowIntro(opts)
     })
     Corner(3, orbitDot)
 
-    -- Title / chip / tagline
     local titleLbl = Create("TextLabel", {
         Text = title,
         Font = Enum.Font.GothamBold,
@@ -316,7 +308,6 @@ function LucidUI:ShowIntro(opts)
         Parent = card,
     })
 
-    -- Stage dots
     local DOT_SIZE = 8
     local DOT_GAP  = 10
     local dotsRowWidth = (DOT_COUNT * DOT_SIZE) + ((DOT_COUNT - 1) * DOT_GAP)
@@ -343,7 +334,6 @@ function LucidUI:ShowIntro(opts)
         stageDots[i] = dot
     end
 
-    -- Progress bar
     local track = Create("Frame", {
         Size = UDim2.new(1, -56, 0, 6),
         Position = UDim2.new(0, 28, 1, -32),
@@ -407,7 +397,6 @@ function LucidUI:ShowIntro(opts)
         Parent = card,
     })
 
-    -- Card + text entrance (blob is driven entirely by the loop)
     Tween(overlay, 0.40, { BackgroundTransparency = 0.35 }):Play()
     Tween(blur, 0.55, { Size = 28 }):Play()
     Tween(colorFx, 0.55, { Saturation = -0.25 }):Play()
@@ -433,7 +422,6 @@ function LucidUI:ShowIntro(opts)
         Tween(rightLbl, 0.30, { TextTransparency = 0 }):Play()
     end)
 
-    -- ── Continuous animations ──────────────────────────────────
     local animStart = tick()
     local animConn = RunService.RenderStepped:Connect(function()
         if not introGui.Parent then animConn:Disconnect() return end
@@ -453,21 +441,14 @@ function LucidUI:ShowIntro(opts)
             shimmerGrad.Offset = Vector2.new(-1 + cycle * 2, 0)
         end
 
-        -- ── Blob: layered pseudo-audio ─────────────────────────
-        -- Three waves stacked so the pulse feels like a real track
-        -- rather than a single sine. Kick hits every ~0.4s, snare
-        -- offsets, and a slow bass wave underneath modulates the
-        -- overall "loudness."
-        local bass  = (math.sin(t * 0.62) * 0.5) + 0.5            -- 0..1, slow
-        local kick  = math.max(0, math.sin(t * 2.35)) ^ 4         -- sharp pulse
-        local snare = math.max(0, math.sin(t * 3.85 + 1.4)) ^ 6   -- rare flick
+        local bass  = (math.sin(t * 0.62) * 0.5) + 0.5
+        local kick  = math.max(0, math.sin(t * 2.35)) ^ 4
+        local snare = math.max(0, math.sin(t * 3.85 + 1.4)) ^ 6
         local energy = bass * 0.35 + kick * 0.45 + snare * 0.20
         energy = math.clamp(energy, 0, 1)
 
-        -- Entrance ramp: alpha goes 0 → 1 over the first 0.75s
         local alpha = math.clamp((t - 0.15) / 0.6, 0, 1)
 
-        -- Stretch on X (elongate), squash on Y (volume conserved)
         local stretch = energy * 0.28
         local squash  = energy * 0.10
 
@@ -475,26 +456,20 @@ function LucidUI:ShowIntro(opts)
         local sy = (1 - squash)  * alpha
         blobCore.Size = UDim2.fromScale(sx, sy)
 
-        -- Gentle sway (rotation is fine on a rounded Frame —
-        -- the corner follows, giving an organic wobble)
         blobCore.Rotation = math.sin(t * 1.6) * 6 * alpha
 
-        -- Core opacity: visible + a touch brighter when loud
         local coreTarget = 0.80 - energy * 0.12
         blobCore.BackgroundTransparency = 1 - (1 - coreTarget) * alpha
 
-        -- Halo: grows when the core is resting, fades as core stretches
         local haloScale = 1.10 + (1 - energy) * 0.15
         blobHalo.Size = UDim2.fromScale(haloScale * alpha, haloScale * alpha)
         local haloTarget = 0.88 - energy * 0.06
         blobHalo.BackgroundTransparency = 1 - (1 - haloTarget) * alpha
 
-        -- Shine: brighter when loud (energy catches the light)
         local shineTarget = 0.72 - energy * 0.15
         blobShine.BackgroundTransparency = 1 - (1 - shineTarget) * alpha
     end)
 
-    -- Completion flourish
     local function burstParticles()
         for i = 1, 14 do
             local angle = (i / 14) * math.pi * 2
@@ -541,7 +516,6 @@ function LucidUI:ShowIntro(opts)
         task.delay(0.8, function() pcall(function() ring:Destroy() end) end)
     end
 
-    -- Finish
     local completed = false
     local function finish()
         if completed then return end
@@ -571,7 +545,6 @@ function LucidUI:ShowIntro(opts)
             Tween(d, 0.3, { BackgroundTransparency = 1 }):Play()
         end
 
-        -- Blob exit: expands outward and fades, like a burst of energy
         Tween(blobCore, 0.6, {
             Size = UDim2.fromScale(1.6, 1.6),
             BackgroundTransparency = 1,
@@ -597,7 +570,6 @@ function LucidUI:ShowIntro(opts)
         if onComplete then pcall(onComplete) end
     end
 
-    -- Skip on input
     if skipOnInput then
         local skipConn
         skipConn = UserInputService.InputBegan:Connect(function(input, processed)
@@ -614,7 +586,6 @@ function LucidUI:ShowIntro(opts)
         end)
     end
 
-    -- Run stages
     task.spawn(function()
         local prevPct = 0
 
