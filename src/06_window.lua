@@ -696,6 +696,40 @@ function LucidUI.Window:ToggleSettings(state)
     end
 end
 
+function LucidUI.Window:Destroy()
+    -- Stop every connection this window owns
+    for _, c in ipairs(self._conns or {}) do
+        if typeof(c) == "RBXScriptConnection" then c:Disconnect() end
+    end
+    self._conns = {}
+
+    -- Release the press lock if this window owns it
+    if self._pressOwner then
+        self._pressOwner = nil
+    end
+
+    -- Clear the slider lock if this window owns it
+    if LucidUI._activeSlider and LucidUI._activeSlider.Parent == self.Gui then
+        LucidUI._activeSlider = nil
+    end
+
+    -- Destroy the ScreenGui
+    if self.Gui then
+        self.Gui:Destroy()
+        self.Gui = nil
+    end
+
+    -- Remove from the registry
+    for i, w in ipairs(LucidUI._windows) do
+        if w == self then
+            table.remove(LucidUI._windows, i)
+            break
+        end
+    end
+
+    print("[LucidUI] Window destroyed:", self.Name)
+end
+
 function LucidUI.Window:SetVisible(state)
     self.Visible = state
     if self.Gui then self.Gui.Enabled = state end
