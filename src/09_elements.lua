@@ -9,15 +9,16 @@
       Hover and press handlers read `win.Theme` at call time.
 
     Slider:
-      • Visual position is driven by a RenderStepped lerp loop, not by
-        direct assignment. The handle and fill ease toward the target
-        instead of snapping.
-      • During drag: fast catch-up so it still tracks the finger.
-      • On :Set(): slower catch-up so config loads slide smoothly.
+      • Visual position is driven by a RenderStepped lerp loop.
+      • During drag: fast catch-up. On :Set(): slower.
       • While dragging, the nearest ScrollingFrame ancestor has
         ScrollingEnabled = false so the page doesn't scroll under you.
       • Handle grows 18 → 20 on hover, 20 → 22 on grab.
-      • Value label flashes white on each integer step change.
+
+    ColorPicker:
+      Row with a swatch on the right. Tap anywhere to open the
+      shared HSV modal. Callback fires live on every change.
+      :Set() accepts Color3 or {R, G, B} for config round-trips.
 ]]
 
 -- ============================================================
@@ -313,23 +314,15 @@ function LucidUI.Section:CreateSlider(config)
         Parent = track,
     })
 
-    -- ── Eased motion ────────────────────────────────────────────
-    -- targetRel is where we want the handle to be (0..1). displayRel
-    -- is where it currently is. The RenderStepped loop lerps one
-    -- toward the other with a frame-rate-independent curve.
     local targetRel  = (value - min) / (max - min)
     local displayRel = targetRel
 
-    -- Catch-up rates (per-second exponential factor). Higher = snappier.
-    local DRAG_SPEED = 30   -- while the user is dragging
-    local SET_SPEED  = 12   -- on programmatic :Set()
+    local DRAG_SPEED = 30
+    local SET_SPEED  = 12
 
     local dragging = false
     local hovering = false
 
-    -- ── Scroll lock ─────────────────────────────────────────────
-    -- Walk up the parent chain to find any ScrollingFrame. While
-    -- dragging, disable its scrolling so the page doesn't move.
     local scrollAncestor = nil
     do
         local p = row.Parent
@@ -342,7 +335,6 @@ function LucidUI.Section:CreateSlider(config)
         end
     end
 
-    -- ── Value flash ─────────────────────────────────────────────
     local lastFlashedValue = value
     local flashTween = nil
     local function flashIfChanged()
@@ -354,7 +346,6 @@ function LucidUI.Section:CreateSlider(config)
         flashTween:Play()
     end
 
-    -- ── Input → target ──────────────────────────────────────────
     local function setFromInput(input)
         local rel = math.clamp(
             (input.Position.X - track.AbsolutePosition.X) / track.AbsoluteSize.X,
@@ -368,12 +359,10 @@ function LucidUI.Section:CreateSlider(config)
         flashIfChanged()
     end
 
-    -- ── Handle size helper ──────────────────────────────────────
     local function setHandleSize(size)
         Tween(handle, 0.14, { Size = UDim2.fromOffset(size, size) }, Enum.EasingStyle.Quart):Play()
     end
 
-    -- ── Grab / release ──────────────────────────────────────────
     drag.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1
             or input.UserInputType == Enum.UserInputType.Touch then
@@ -381,7 +370,6 @@ function LucidUI.Section:CreateSlider(config)
             LucidUI._activeSlider = drag
             dragging = true
 
-            -- Lock the parent scroll frame so the page freezes
             if scrollAncestor then
                 scrollAncestor.ScrollingEnabled = false
             end
@@ -411,7 +399,6 @@ function LucidUI.Section:CreateSlider(config)
             if not dragging then return end
             dragging = false
 
-            -- Restore the scroll frame
             if scrollAncestor then
                 scrollAncestor.ScrollingEnabled = true
             end
@@ -421,7 +408,6 @@ function LucidUI.Section:CreateSlider(config)
         end
     end))
 
-    -- ── Hover ───────────────────────────────────────────────────
     drag.MouseEnter:Connect(function()
         hovering = true
         local t = win.Theme
@@ -438,10 +424,6 @@ function LucidUI.Section:CreateSlider(config)
         if not dragging then setHandleSize(HANDLE_BASE) end
     end)
 
-    -- ── Eased render loop ───────────────────────────────────────
-    -- Frame-rate-independent exponential lerp:
-    --   alpha = 1 - exp(-speed * dt)
-    -- displayRel = displayRel + (targetRel - displayRel) * alpha
     table.insert(win._conns, RunService.RenderStepped:Connect(function(dt)
         if not fill.Parent or not handle.Parent then return end
 
@@ -463,7 +445,6 @@ function LucidUI.Section:CreateSlider(config)
         handle.Position = UDim2.new(displayRel, 0, 0.5, 0)
     end))
 
-    -- ── Theme ───────────────────────────────────────────────────
     win:_registerTheme(function(t)
         row.BackgroundColor3   = t.Surface
         nameLabel.TextColor3   = t.TextPrimary
@@ -474,7 +455,6 @@ function LucidUI.Section:CreateSlider(config)
         handleStroke.Color     = t.Border
     end)
 
-    -- ── Programmatic set ────────────────────────────────────────
     local obj = {
         Instance = row,
         Flag = flag,
@@ -666,6 +646,145 @@ function LucidUI.Section:CreateDropdown(config)
     if flag then
         win._elementsByFlag[flag] = obj
         win._configData[flag] = value
+    end
+
+    self:_track(row)
+    return obj
+end
+
+-- ============================================================
+-- ColorPicker — tap the row to open the shared HSV modal
+-- ============================================================
+function LucidUI.Section:CreateColorPicker(config)
+    config = config or {}
+    local win, theme = self.Tab.Window, self.Tab.Window.Theme
+
+    local value = config.Default or Color3.fromRGB(90, 180, 255)
+    local flag  = config.Flag
+
+    local row = Create("Frame", {
+        BackgroundColor3 = theme.Surface,
+        BackgroundTransparency = theme.SurfaceTrans,
+        Size = UDim2.new(1, 0, 0, 48),
+        LayoutOrder = self:_nextOrder(),
+        ZIndex = 2,
+    })
+    Corner(10, row)
+    local rowStroke = Stroke(theme.Border, 1, theme.BorderTrans + 0.05, row)
+
+    local nameLabel = Create("TextLabel", {
+        Text = config.Name or "Color",
+        Font = Enum.Font.GothamMedium,
+        TextSize = 14,
+        TextColor3 = theme.TextPrimary,
+        BackgroundTransparency = 1,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Position = UDim2.fromOffset(14, 0),
+        Size = UDim2.new(1, -110, 1, 0),
+        ZIndex = 3,
+        Parent = row,
+    })
+
+    -- Live hex readout under the label
+    local hexLabel = Create("TextLabel", {
+        Text = string.format("#%02X%02X%02X",
+            math.floor(value.R * 255),
+            math.floor(value.G * 255),
+            math.floor(value.B * 255)),
+        Font = Enum.Font.Gotham, TextSize = 11,
+        TextColor3 = theme.TextMuted,
+        BackgroundTransparency = 1,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Position = UDim2.fromOffset(14, 26),
+        Size = UDim2.new(1, -110, 0, 14),
+        ZIndex = 3,
+        Parent = row,
+    })
+
+    local swatch = Create("Frame", {
+        Size = UDim2.fromOffset(32, 32),
+        Position = UDim2.new(1, -46, 0.5, -16),
+        BackgroundColor3 = value,
+        BorderSizePixel = 0,
+        ZIndex = 3,
+        Parent = row,
+    })
+    Corner(8, swatch)
+    local swatchStroke = Stroke(theme.Border, 1, 0.5, swatch)
+
+    local clickArea = Create("TextButton", {
+        Text = "",
+        BackgroundTransparency = 1,
+        Size = UDim2.fromScale(1, 1),
+        ZIndex = 5,
+        Parent = row,
+    })
+
+    local function setColorInternal(c, silent)
+        value = c
+        swatch.BackgroundColor3 = c
+        hexLabel.Text = string.format("#%02X%02X%02X",
+            math.floor(c.R * 255), math.floor(c.G * 255), math.floor(c.B * 255))
+        if flag then
+            win._configData[flag] = { R = c.R, G = c.G, B = c.B }
+        end
+        if not silent and config.Callback then pcall(config.Callback, c) end
+    end
+
+    BindTap(clickArea, function()
+        PlayUISound("click")
+        win:_openColorPickerModal({
+            Label        = config.Name or "Color",
+            InitialColor = value,
+            OnChange     = function(c)
+                setColorInternal(c, false)
+            end,
+        })
+    end)
+
+    clickArea.MouseEnter:Connect(function()
+        local t = win.Theme
+        Tween(row, 0.12, {
+            BackgroundTransparency = math.max(t.SurfaceTrans - 0.1, 0),
+        }):Play()
+        Tween(swatch, 0.12, {
+            Size = UDim2.fromOffset(36, 36),
+            Position = UDim2.new(1, -48, 0.5, -18),
+        }):Play()
+    end)
+    clickArea.MouseLeave:Connect(function()
+        local t = win.Theme
+        Tween(row, 0.12, { BackgroundTransparency = t.SurfaceTrans }):Play()
+        Tween(swatch, 0.12, {
+            Size = UDim2.fromOffset(32, 32),
+            Position = UDim2.new(1, -46, 0.5, -16),
+        }):Play()
+    end)
+
+    win:_registerTheme(function(t)
+        row.BackgroundColor3 = t.Surface
+        nameLabel.TextColor3 = t.TextPrimary
+        hexLabel.TextColor3  = t.TextMuted
+        rowStroke.Color      = t.Border
+        swatchStroke.Color   = t.Border
+    end)
+
+    local obj = {
+        Instance = row,
+        Flag = flag,
+        Set = function(_, v)
+            -- Accept Color3, or {R, G, B} in 0..1 range (from config)
+            if typeof(v) == "Color3" then
+                setColorInternal(v, true)
+            elseif type(v) == "table" and v.R and v.G and v.B then
+                setColorInternal(Color3.new(v.R, v.G, v.B), true)
+            end
+        end,
+        Get = function() return value end,
+    }
+    if flag then
+        win._elementsByFlag[flag] = obj
+        win._configData[flag] = { R = value.R, G = value.G, B = value.B }
     end
 
     self:_track(row)
