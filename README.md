@@ -1,5 +1,5 @@
 <div align="center">
-<img src="assets/banner.svg" width="100%" alt="LucidUI" />
+<img src="assets/banner.svg" width="200%" alt="LucidUI" />
 </div>
 
 # LucidUI
