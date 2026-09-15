@@ -2,26 +2,23 @@
     Settings A — theme dropdown, custom theme editor, saved themes.
 
     Click handling:
-      Every click goes through BindTap (from 01b_polish.lua). The
-      color picker's SV square and hue strip keep InputBegan/InputChanged
-      because drag IS their interaction model.
+      Every click goes through BindTap (from 01b_polish.lua).
 
-    Custom theme editor:
-      Each color field is a 48px row with a swatch. Tapping the row
-      opens a modal HSV picker.
+    Color picker:
+      _openColorPickerModal(opts) is the general-purpose picker.
+      Anywhere can call it with { Label, InitialColor, OnChange }.
+      The settings Custom Theme editor and the public
+      Section:CreateColorPicker element both route through it.
+
+      The modal lives directly under W.Gui (not under the settings
+      panel) so it can be opened from anywhere without being clipped
+      by the panel's bounds. Its backdrop absorbs every click while
+      open, so nothing underneath can be interacted with.
 
     Auto-contrast:
       ApplyCustomTheme checks the user's TextPrimary against their
       Background using WCAG relative luminance. If the contrast ratio
-      is below 4.5:1, it silently swaps to white or near-black —
-      whichever reads better. TextMuted gets the same treatment with
-      a 3:1 threshold. The picker's value is written back so it
-      reflects the actual rendered color.
-
-    Color picker modal:
-      Pop-in with Back-ease scale, pop-out with Quad.In.
-      Backdrop absorbs clicks and closes on tap-outside.
-      Header carries a Frames-built paint bucket icon.
+      is below 4.5:1, it silently swaps to white or near-black.
 ]]
 
 -- ============================================================
@@ -41,9 +38,6 @@ local function contrastRatio(c1, c2)
     return (l1 + 0.05) / (l2 + 0.05)
 end
 
--- If `preferred` doesn't reach `minRatio` contrast against `bg`,
--- swap it for whichever of (light, dark) reads better.
--- Returns (color, wasAdjusted).
 local function autoReadableText(preferred, bg, minRatio)
     minRatio = minRatio or 4.5
     if contrastRatio(preferred, bg) >= minRatio then
@@ -59,8 +53,7 @@ local function autoReadableText(preferred, bg, minRatio)
 end
 
 -- ============================================================
--- Paint bucket icon — handle + tapered body + paint drop.
--- Built entirely from Frames so it renders on every device.
+-- Paint bucket icon
 -- ============================================================
 local function BuildPaintBucketIcon(parent, size, color)
     size = size or 18
@@ -151,6 +144,9 @@ local function BuildPaintBucketIcon(parent, size, color)
     return holder, parts
 end
 
+-- ============================================================
+-- Setting layout helpers
+-- ============================================================
 function LucidUI.Window:_addSettingFrame(frame)
     frame.LayoutOrder = self._settingsOrder
     self._settingsOrder = self._settingsOrder + 1
@@ -194,10 +190,6 @@ function LucidUI.Window:ApplyCustomTheme()
     for k, v in pairs(base) do t[k] = v end
     for k, v in pairs(self._customTheme) do t[k] = v end
 
-    -- ── Auto-contrast pass ─────────────────────────────────────
-    -- Primary text: needs 4.5:1 against the background. If the
-    -- user's pick fails, swap to a readable alternative and write
-    -- it back so the picker reflects the actual color.
     local readablePrimary, adjusted = autoReadableText(
         self._customTheme.TextPrimary,
         self._customTheme.Background,
@@ -208,23 +200,18 @@ function LucidUI.Window:ApplyCustomTheme()
     end
     t.TextPrimary = readablePrimary
 
-    -- Secondary: 8% darker than primary — stays subordinate but
-    -- still readable.
     t.TextSecondary = Color3.new(
         math.min(t.TextPrimary.R * 0.92, 1),
         math.min(t.TextPrimary.G * 0.92, 1),
         math.min(t.TextPrimary.B * 0.92, 1)
     )
 
-    -- Muted: midpoint between primary and background. Enforce a
-    -- 3:1 minimum so it stays legible at small sizes.
     local mutedRaw = Color3.new(
         (t.TextPrimary.R + t.Background.R) * 0.5,
         (t.TextPrimary.G + t.Background.G) * 0.5,
         (t.TextPrimary.B + t.Background.B) * 0.5
     )
-    local mutedColor = autoReadableText(mutedRaw, t.Background, 3)
-    t.TextMuted = mutedColor
+    t.TextMuted = autoReadableText(mutedRaw, t.Background, 3)
 
     t.ToggleOff   = t.Surface
     t.SliderTrack = t.Surface
@@ -286,6 +273,329 @@ function LucidUI.Window:LoadCustomTheme(name)
     self:ApplyCustomTheme()
     self.ThemeName = name
     LucidUI:Notify({ Title = "Theme Loaded", Message = name })
+end
+
+-- ============================================================
+-- General-purpose HSV color picker modal
+-- ============================================================
+-- Can be called from anywhere. Pass:
+--   Label        — header text
+--   InitialColor — starting Color3 (defaults to a blue)
+--   OnChange     — function(newColor) called live on every change
+--   OnClose      — optional, called when the modal is destroyed
+function LucidUI.Window:_openColorPickerModal(opts)
+    opts = opts or {}
+    local initialColor = opts.InitialColor or Color3.fromRGB(90, 180, 255)
+    local headerLabel  = opts.Label        or "Color"
+    local onChange     = opts.OnChange
+    local onClose      = opts.OnClose
+
+    -- One picker per window
+    if self._colorPickerModal and self._colorPickerModal.Parent then
+        self._colorPickerModal:Destroy()
+    end
+
+    local base = initialColor
+    local H, S, V = Color3.toHSV(base)
+
+    local modal = Create("Frame", {
+        Name = "ColorPickerModal",
+        Size = UDim2.fromScale(1, 1),
+        BackgroundColor3 = Color3.new(0, 0, 0),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        ZIndex = 500,
+        Parent = self.Gui,
+    })
+    self._colorPickerModal = modal
+
+    local backdrop = Create("TextButton", {
+        Name = "Backdrop",
+        Text = "",
+        AutoButtonColor = false,
+        Size = UDim2.fromScale(1, 1),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        ZIndex = 1,
+        Parent = modal,
+    })
+
+    local card = Create("CanvasGroup", {
+        Size = UDim2.fromOffset(360, 260),
+        Position = UDim2.fromScale(0.5, 0.5),
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        BackgroundColor3 = self.Theme.Background,
+        BackgroundTransparency = 0.05,
+        BorderSizePixel = 0,
+        GroupTransparency = 1,
+        ZIndex = 2,
+        Parent = modal,
+    })
+    Corner(16, card)
+    Stroke(self.Theme.Border, 1, 0.5, card)
+
+    local popScale = Instance.new("UIScale")
+    popScale.Scale = 0.82
+    popScale.Parent = card
+
+    local iconHolder = BuildPaintBucketIcon(card, 20, self.Theme.Accent)
+    iconHolder.Position = UDim2.fromOffset(16, 14)
+    iconHolder.ZIndex = 3
+
+    Create("TextLabel", {
+        Text = headerLabel,
+        Font = Enum.Font.GothamBold, TextSize = 15,
+        TextColor3 = self.Theme.TextPrimary, BackgroundTransparency = 1,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Position = UDim2.fromOffset(46, 14),
+        Size = UDim2.new(1, -60, 0, 22),
+        ZIndex = 3, Parent = card,
+    })
+
+    local closeBtn = Create("TextButton", {
+        Text = "x", Font = Enum.Font.GothamBold, TextSize = 14,
+        TextColor3 = self.Theme.TextMuted, BackgroundTransparency = 1,
+        Size = UDim2.fromOffset(28, 28),
+        Position = UDim2.new(1, -34, 0, 12),
+        ZIndex = 3, Parent = card,
+    })
+
+    -- SV square
+    local svArea = Create("Frame", {
+        Size = UDim2.fromOffset(250, 155),
+        Position = UDim2.fromOffset(18, 48),
+        BackgroundColor3 = Color3.fromHSV(H, 1, 1),
+        BorderSizePixel = 0, ClipsDescendants = true,
+        ZIndex = 3, Parent = card,
+    })
+    Corner(10, svArea)
+
+    local satOverlay = Create("Frame", {
+        Size = UDim2.fromScale(1, 1),
+        BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+        BorderSizePixel = 0, ZIndex = 4, Parent = svArea,
+    })
+    Create("UIGradient", {
+        Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 0),
+            NumberSequenceKeypoint.new(1, 1),
+        }),
+        Rotation = 0, Parent = satOverlay,
+    })
+
+    local valOverlay = Create("Frame", {
+        Size = UDim2.fromScale(1, 1),
+        BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+        BorderSizePixel = 0, ZIndex = 5, Parent = svArea,
+    })
+    Create("UIGradient", {
+        Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 1),
+            NumberSequenceKeypoint.new(1, 0),
+        }),
+        Rotation = 90, Parent = valOverlay,
+    })
+
+    local dot = Create("Frame", {
+        Size = UDim2.fromOffset(16, 16),
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.fromScale(S, 1 - V),
+        BackgroundColor3 = Color3.new(1, 1, 1),
+        BorderSizePixel = 2, BorderColor3 = Color3.new(0, 0, 0),
+        ZIndex = 6, Parent = svArea,
+    })
+    Corner(8, dot)
+
+    -- Hue strip
+    local hueStrip = Create("Frame", {
+        Size = UDim2.fromOffset(26, 155),
+        Position = UDim2.new(1, -44, 0, 48),
+        BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+        BorderSizePixel = 0, ClipsDescendants = true,
+        ZIndex = 3, Parent = card,
+    })
+    Corner(10, hueStrip)
+    Create("UIGradient", {
+        Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0.000, Color3.fromRGB(255, 0, 0)),
+            ColorSequenceKeypoint.new(0.167, Color3.fromRGB(255, 255, 0)),
+            ColorSequenceKeypoint.new(0.333, Color3.fromRGB(0, 255, 0)),
+            ColorSequenceKeypoint.new(0.500, Color3.fromRGB(0, 255, 255)),
+            ColorSequenceKeypoint.new(0.667, Color3.fromRGB(0, 0, 255)),
+            ColorSequenceKeypoint.new(0.833, Color3.fromRGB(255, 0, 255)),
+            ColorSequenceKeypoint.new(1.000, Color3.fromRGB(255, 0, 0)),
+        }),
+        Rotation = 90, Parent = hueStrip,
+    })
+    local hueDot = Create("Frame", {
+        Size = UDim2.new(1, 0, 0, 5),
+        Position = UDim2.new(0, 0, H, 0),
+        AnchorPoint = Vector2.new(0, 0.5),
+        BackgroundColor3 = Color3.new(1, 1, 1),
+        BorderSizePixel = 1, BorderColor3 = Color3.new(0, 0, 0),
+        ZIndex = 6, Parent = hueStrip,
+    })
+
+    -- Bottom row
+    local preview = Create("Frame", {
+        Size = UDim2.fromOffset(32, 32),
+        Position = UDim2.fromOffset(18, 214),
+        BackgroundColor3 = base,
+        BorderSizePixel = 0, ZIndex = 3, Parent = card,
+    })
+    Corner(8, preview)
+    Stroke(self.Theme.Border, 1, 0.5, preview)
+
+    local hexBox = Create("TextBox", {
+        Text = string.format("#%02X%02X%02X",
+            math.floor(base.R * 255),
+            math.floor(base.G * 255),
+            math.floor(base.B * 255)),
+        Font = Enum.Font.GothamBold, TextSize = 13,
+        TextColor3 = self.Theme.TextPrimary,
+        BackgroundColor3 = self.Theme.Background,
+        BackgroundTransparency = 0.3,
+        ClearTextOnFocus = false,
+        TextXAlignment = Enum.TextXAlignment.Center,
+        Size = UDim2.fromOffset(120, 32),
+        Position = UDim2.fromOffset(60, 214),
+        ZIndex = 3, Parent = card,
+    })
+    Corner(8, hexBox)
+
+    local doneBtn = Create("TextButton", {
+        Text = "Done",
+        Font = Enum.Font.GothamBold, TextSize = 13,
+        TextColor3 = Color3.fromRGB(255, 255, 255),
+        BackgroundColor3 = self.Theme.Accent,
+        AutoButtonColor = false,
+        Size = UDim2.fromOffset(100, 32),
+        Position = UDim2.new(1, -118, 0, 214),
+        ZIndex = 3, Parent = card,
+    })
+    Corner(8, doneBtn)
+
+    local function applyColor()
+        local c = Color3.fromHSV(H, S, V)
+        preview.BackgroundColor3 = c
+        svArea.BackgroundColor3  = Color3.fromHSV(H, 1, 1)
+        dot.Position             = UDim2.fromScale(S, 1 - V)
+        hueDot.Position          = UDim2.new(0, 0, H, 0)
+        hexBox.Text = string.format("#%02X%02X%02X",
+            math.floor(c.R * 255), math.floor(c.G * 255), math.floor(c.B * 255))
+        if onChange then pcall(onChange, c) end
+    end
+
+    -- SV drag
+    local svDrag = false
+    local function svUpdate(input)
+        S = math.clamp((input.Position.X - svArea.AbsolutePosition.X) / svArea.AbsoluteSize.X, 0, 1)
+        V = 1 - math.clamp((input.Position.Y - svArea.AbsolutePosition.Y) / svArea.AbsoluteSize.Y, 0, 1)
+        applyColor()
+    end
+    svArea.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
+            svDrag = true; svUpdate(input)
+        end
+    end)
+    table.insert(self._conns, UserInputService.InputChanged:Connect(function(input)
+        if not svDrag then return end
+        if input.UserInputType == Enum.UserInputType.MouseMovement
+            or input.UserInputType == Enum.UserInputType.Touch then svUpdate(input) end
+    end))
+    table.insert(self._conns, UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then svDrag = false end
+    end))
+
+    -- Hue drag
+    local hueDrag = false
+    local function hueUpdate(input)
+        H = math.clamp((input.Position.Y - hueStrip.AbsolutePosition.Y) / hueStrip.AbsoluteSize.Y, 0, 1)
+        applyColor()
+    end
+    hueStrip.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
+            hueDrag = true; hueUpdate(input)
+        end
+    end)
+    table.insert(self._conns, UserInputService.InputChanged:Connect(function(input)
+        if not hueDrag then return end
+        if input.UserInputType == Enum.UserInputType.MouseMovement
+            or input.UserInputType == Enum.UserInputType.Touch then hueUpdate(input) end
+    end))
+    table.insert(self._conns, UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then hueDrag = false end
+    end))
+
+    -- Hex input
+    hexBox.FocusLost:Connect(function()
+        local hex = hexBox.Text:gsub("#", "")
+        if #hex == 6 then
+            local r = tonumber(hex:sub(1, 2), 16)
+            local g = tonumber(hex:sub(3, 4), 16)
+            local b = tonumber(hex:sub(5, 6), 16)
+            if r and g and b then
+                H, S, V = Color3.toHSV(Color3.fromRGB(r, g, b))
+                applyColor()
+            end
+        end
+    end)
+
+    -- Pop-in
+    TweenService:Create(modal, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+        { BackgroundTransparency = 0.55 }):Play()
+    TweenService:Create(popScale, TweenInfo.new(0.32, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+        { Scale = 1 }):Play()
+    TweenService:Create(card, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+        { GroupTransparency = 0 }):Play()
+
+    -- Close
+    local closing = false
+    local function closeModal()
+        if closing then return end
+        closing = true
+
+        local exitScale = TweenService:Create(popScale,
+            TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+            { Scale = 0.86 })
+        exitScale:Play()
+        TweenService:Create(card, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+            { GroupTransparency = 1 }):Play()
+        TweenService:Create(modal, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+            { BackgroundTransparency = 1 }):Play()
+
+        exitScale.Completed:Connect(function()
+            if self._colorPickerModal == modal then
+                self._colorPickerModal = nil
+            end
+            modal:Destroy()
+            if onClose then pcall(onClose) end
+        end)
+    end
+
+    BindTap(backdrop, closeModal)
+    BindTap(closeBtn, closeModal)
+    BindTap(doneBtn, closeModal)
+
+    -- Return the modal in case the caller wants to track it
+    return modal
+end
+
+-- Settings-specific wrapper: opens the picker for a Custom Theme field
+function LucidUI.Window:_openColorPicker(fieldKey, fieldLabel)
+    self:_openColorPickerModal({
+        Label = fieldLabel,
+        InitialColor = self._customTheme[fieldKey],
+        OnChange = function(c)
+            self._customTheme[fieldKey] = c
+            self:ApplyCustomTheme()
+            if self._refreshSwatches then pcall(self._refreshSwatches) end
+        end,
+    })
 end
 
 function LucidUI.Window:_buildThemeSettings()
@@ -413,294 +723,6 @@ function LucidUI.Window:_buildThemeSettings()
     end)
 end
 
--- ============================================================
--- Modern HSV color picker modal
--- ============================================================
-function LucidUI.Window:_openColorPicker(fieldKey, fieldLabel)
-    if self._colorPickerModal and self._colorPickerModal.Parent then
-        self._colorPickerModal:Destroy()
-    end
-
-    local base = self._customTheme[fieldKey]
-    local H, S, V = Color3.toHSV(base)
-
-    local modal = Create("Frame", {
-        Name = "ColorPickerModal",
-        Size = UDim2.fromScale(1, 1),
-        BackgroundColor3 = Color3.new(0, 0, 0),
-        BackgroundTransparency = 1,
-        BorderSizePixel = 0,
-        ZIndex = 500,
-        Parent = self.SettingsPanel,
-    })
-    self._colorPickerModal = modal
-
-    local backdrop = Create("TextButton", {
-        Name = "Backdrop",
-        Text = "",
-        AutoButtonColor = false,
-        Size = UDim2.fromScale(1, 1),
-        BackgroundTransparency = 1,
-        BorderSizePixel = 0,
-        ZIndex = 1,
-        Parent = modal,
-    })
-
-    local card = Create("CanvasGroup", {
-        Size = UDim2.fromOffset(360, 260),
-        Position = UDim2.fromScale(0.5, 0.5),
-        AnchorPoint = Vector2.new(0.5, 0.5),
-        BackgroundColor3 = self.Theme.Background,
-        BackgroundTransparency = 0.05,
-        BorderSizePixel = 0,
-        GroupTransparency = 1,
-        ZIndex = 2,
-        Parent = modal,
-    })
-    Corner(16, card)
-    Stroke(self.Theme.Border, 1, 0.5, card)
-
-    local popScale = Instance.new("UIScale")
-    popScale.Scale = 0.82
-    popScale.Parent = card
-
-    local iconHolder = BuildPaintBucketIcon(card, 20, self.Theme.Accent)
-    iconHolder.Position = UDim2.fromOffset(16, 14)
-    iconHolder.ZIndex = 3
-
-    Create("TextLabel", {
-        Text = fieldLabel,
-        Font = Enum.Font.GothamBold, TextSize = 15,
-        TextColor3 = self.Theme.TextPrimary, BackgroundTransparency = 1,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        Position = UDim2.fromOffset(46, 14),
-        Size = UDim2.new(1, -60, 0, 22),
-        ZIndex = 3, Parent = card,
-    })
-
-    local closeBtn = Create("TextButton", {
-        Text = "x", Font = Enum.Font.GothamBold, TextSize = 14,
-        TextColor3 = self.Theme.TextMuted, BackgroundTransparency = 1,
-        Size = UDim2.fromOffset(28, 28),
-        Position = UDim2.new(1, -34, 0, 12),
-        ZIndex = 3, Parent = card,
-    })
-
-    local svArea = Create("Frame", {
-        Size = UDim2.fromOffset(250, 155),
-        Position = UDim2.fromOffset(18, 48),
-        BackgroundColor3 = Color3.fromHSV(H, 1, 1),
-        BorderSizePixel = 0, ClipsDescendants = true,
-        ZIndex = 3, Parent = card,
-    })
-    Corner(10, svArea)
-
-    local satOverlay = Create("Frame", {
-        Size = UDim2.fromScale(1, 1),
-        BackgroundColor3 = Color3.fromRGB(255, 255, 255),
-        BorderSizePixel = 0, ZIndex = 4, Parent = svArea,
-    })
-    Create("UIGradient", {
-        Transparency = NumberSequence.new({
-            NumberSequenceKeypoint.new(0, 0),
-            NumberSequenceKeypoint.new(1, 1),
-        }),
-        Rotation = 0, Parent = satOverlay,
-    })
-
-    local valOverlay = Create("Frame", {
-        Size = UDim2.fromScale(1, 1),
-        BackgroundColor3 = Color3.fromRGB(0, 0, 0),
-        BorderSizePixel = 0, ZIndex = 5, Parent = svArea,
-    })
-    Create("UIGradient", {
-        Transparency = NumberSequence.new({
-            NumberSequenceKeypoint.new(0, 1),
-            NumberSequenceKeypoint.new(1, 0),
-        }),
-        Rotation = 90, Parent = valOverlay,
-    })
-
-    local dot = Create("Frame", {
-        Size = UDim2.fromOffset(16, 16),
-        AnchorPoint = Vector2.new(0.5, 0.5),
-        Position = UDim2.fromScale(S, 1 - V),
-        BackgroundColor3 = Color3.new(1, 1, 1),
-        BorderSizePixel = 2, BorderColor3 = Color3.new(0, 0, 0),
-        ZIndex = 6, Parent = svArea,
-    })
-    Corner(8, dot)
-
-    local hueStrip = Create("Frame", {
-        Size = UDim2.fromOffset(26, 155),
-        Position = UDim2.new(1, -44, 0, 48),
-        BackgroundColor3 = Color3.fromRGB(255, 255, 255),
-        BorderSizePixel = 0, ClipsDescendants = true,
-        ZIndex = 3, Parent = card,
-    })
-    Corner(10, hueStrip)
-    Create("UIGradient", {
-        Color = ColorSequence.new({
-            ColorSequenceKeypoint.new(0.000, Color3.fromRGB(255, 0, 0)),
-            ColorSequenceKeypoint.new(0.167, Color3.fromRGB(255, 255, 0)),
-            ColorSequenceKeypoint.new(0.333, Color3.fromRGB(0, 255, 0)),
-            ColorSequenceKeypoint.new(0.500, Color3.fromRGB(0, 255, 255)),
-            ColorSequenceKeypoint.new(0.667, Color3.fromRGB(0, 0, 255)),
-            ColorSequenceKeypoint.new(0.833, Color3.fromRGB(255, 0, 255)),
-            ColorSequenceKeypoint.new(1.000, Color3.fromRGB(255, 0, 0)),
-        }),
-        Rotation = 90, Parent = hueStrip,
-    })
-    local hueDot = Create("Frame", {
-        Size = UDim2.new(1, 0, 0, 5),
-        Position = UDim2.new(0, 0, H, 0),
-        AnchorPoint = Vector2.new(0, 0.5),
-        BackgroundColor3 = Color3.new(1, 1, 1),
-        BorderSizePixel = 1, BorderColor3 = Color3.new(0, 0, 0),
-        ZIndex = 6, Parent = hueStrip,
-    })
-
-    local preview = Create("Frame", {
-        Size = UDim2.fromOffset(32, 32),
-        Position = UDim2.fromOffset(18, 214),
-        BackgroundColor3 = base,
-        BorderSizePixel = 0, ZIndex = 3, Parent = card,
-    })
-    Corner(8, preview)
-    Stroke(self.Theme.Border, 1, 0.5, preview)
-
-    local hexBox = Create("TextBox", {
-        Text = string.format("#%02X%02X%02X",
-            math.floor(base.R * 255),
-            math.floor(base.G * 255),
-            math.floor(base.B * 255)),
-        Font = Enum.Font.GothamBold, TextSize = 13,
-        TextColor3 = self.Theme.TextPrimary,
-        BackgroundColor3 = self.Theme.Background,
-        BackgroundTransparency = 0.3,
-        ClearTextOnFocus = false,
-        TextXAlignment = Enum.TextXAlignment.Center,
-        Size = UDim2.fromOffset(120, 32),
-        Position = UDim2.fromOffset(60, 214),
-        ZIndex = 3, Parent = card,
-    })
-    Corner(8, hexBox)
-
-    local doneBtn = Create("TextButton", {
-        Text = "Done",
-        Font = Enum.Font.GothamBold, TextSize = 13,
-        TextColor3 = Color3.fromRGB(255, 255, 255),
-        BackgroundColor3 = self.Theme.Accent,
-        AutoButtonColor = false,
-        Size = UDim2.fromOffset(100, 32),
-        Position = UDim2.new(1, -118, 0, 214),
-        ZIndex = 3, Parent = card,
-    })
-    Corner(8, doneBtn)
-
-    local function applyColor()
-        local c = Color3.fromHSV(H, S, V)
-        preview.BackgroundColor3   = c
-        svArea.BackgroundColor3    = Color3.fromHSV(H, 1, 1)
-        dot.Position               = UDim2.fromScale(S, 1 - V)
-        hueDot.Position            = UDim2.new(0, 0, H, 0)
-        hexBox.Text = string.format("#%02X%02X%02X",
-            math.floor(c.R * 255), math.floor(c.G * 255), math.floor(c.B * 255))
-        self._customTheme[fieldKey] = c
-        self:ApplyCustomTheme()
-        if self._refreshSwatches then pcall(self._refreshSwatches) end
-    end
-
-    local svDrag = false
-    local function svUpdate(input)
-        S = math.clamp((input.Position.X - svArea.AbsolutePosition.X) / svArea.AbsoluteSize.X, 0, 1)
-        V = 1 - math.clamp((input.Position.Y - svArea.AbsolutePosition.Y) / svArea.AbsoluteSize.Y, 0, 1)
-        applyColor()
-    end
-    svArea.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-            or input.UserInputType == Enum.UserInputType.Touch then
-            svDrag = true; svUpdate(input)
-        end
-    end)
-    table.insert(self._conns, UserInputService.InputChanged:Connect(function(input)
-        if not svDrag then return end
-        if input.UserInputType == Enum.UserInputType.MouseMovement
-            or input.UserInputType == Enum.UserInputType.Touch then svUpdate(input) end
-    end))
-    table.insert(self._conns, UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-            or input.UserInputType == Enum.UserInputType.Touch then svDrag = false end
-    end))
-
-    local hueDrag = false
-    local function hueUpdate(input)
-        H = math.clamp((input.Position.Y - hueStrip.AbsolutePosition.Y) / hueStrip.AbsoluteSize.Y, 0, 1)
-        applyColor()
-    end
-    hueStrip.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-            or input.UserInputType == Enum.UserInputType.Touch then
-            hueDrag = true; hueUpdate(input)
-        end
-    end)
-    table.insert(self._conns, UserInputService.InputChanged:Connect(function(input)
-        if not hueDrag then return end
-        if input.UserInputType == Enum.UserInputType.MouseMovement
-            or input.UserInputType == Enum.UserInputType.Touch then hueUpdate(input) end
-    end))
-    table.insert(self._conns, UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-            or input.UserInputType == Enum.UserInputType.Touch then hueDrag = false end
-    end))
-
-    hexBox.FocusLost:Connect(function()
-        local hex = hexBox.Text:gsub("#", "")
-        if #hex == 6 then
-            local r = tonumber(hex:sub(1, 2), 16)
-            local g = tonumber(hex:sub(3, 4), 16)
-            local b = tonumber(hex:sub(5, 6), 16)
-            if r and g and b then
-                H, S, V = Color3.toHSV(Color3.fromRGB(r, g, b))
-                applyColor()
-            end
-        end
-    end)
-
-    TweenService:Create(modal, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-        { BackgroundTransparency = 0.55 }):Play()
-    TweenService:Create(popScale, TweenInfo.new(0.32, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
-        { Scale = 1 }):Play()
-    TweenService:Create(card, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-        { GroupTransparency = 0 }):Play()
-
-    local closing = false
-    local function closeModal()
-        if closing then return end
-        closing = true
-
-        local exitScale = TweenService:Create(popScale,
-            TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-            { Scale = 0.86 })
-        exitScale:Play()
-        TweenService:Create(card, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-            { GroupTransparency = 1 }):Play()
-        TweenService:Create(modal, TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-            { BackgroundTransparency = 1 }):Play()
-
-        exitScale.Completed:Connect(function()
-            modal:Destroy()
-            if self._colorPickerModal == modal then
-                self._colorPickerModal = nil
-            end
-        end)
-    end
-
-    BindTap(backdrop, closeModal)
-    BindTap(closeBtn, closeModal)
-    BindTap(doneBtn, closeModal)
-end
-
 function LucidUI.Window:_buildCustomThemeSettings()
     self:_addSettingSection("Custom Theme")
     self:_ensureCustomTheme()
@@ -771,8 +793,6 @@ function LucidUI.Window:_buildCustomThemeSettings()
         end)
     end
 
-    -- Called from the picker's applyColor so swatches reflect any
-    -- auto-contrast adjustments applied to _customTheme.
     self._refreshSwatches = function()
         for _, s in ipairs(swatches) do
             s.frame.BackgroundColor3 = self._customTheme[s.key]
