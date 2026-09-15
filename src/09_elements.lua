@@ -23,6 +23,7 @@ function LucidUI.Section:CreateButton(config)
         BackgroundColor3 = theme.Surface,
         BackgroundTransparency = theme.SurfaceTrans,
         AutoButtonColor = false,
+        ClipsDescendants = true,   -- ← keeps the ripple inside the button
         Size = UDim2.new(1, 0, 0, 36),
         LayoutOrder = self:_nextOrder(),
         ZIndex = 2,
