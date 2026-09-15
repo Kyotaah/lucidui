@@ -3,8 +3,13 @@
 
     Click handling:
       Every click goes through BindTap (from 01b_polish.lua). The
-      color picker sliders keep InputBegan/InputChanged because drag
-      IS their interaction model.
+      color picker's SV square and hue strip keep InputBegan/InputChanged
+      because drag IS their interaction model.
+
+    Custom theme editor:
+      Each color field is a 48px row with a swatch. Tapping the row
+      opens a modal HSV picker with an SV square, hue strip, live
+      preview, and hex input.
 ]]
 
 function LucidUI.Window:_addSettingFrame(frame)
@@ -175,7 +180,11 @@ function LucidUI.Window:_buildThemeSettings()
                 table.insert(presetNames, name)
             end
         end
-        table.sort(presetNames)
+        table.sort(presetNames, function(a, b)
+            if a == "Default" then return true end
+            if b == "Default" then return false end
+            return a:lower() < b:lower()
+        end)
         for _, name in ipairs(presetNames) do table.insert(options, name) end
         table.insert(options, "Custom")
         for _, name in ipairs(Compat.listThemes()) do table.insert(options, name) end
@@ -189,10 +198,12 @@ function LucidUI.Window:_buildThemeSettings()
             })
             Corner(8, opt)
             opt.MouseEnter:Connect(function()
-                Tween(opt, 0.12, { BackgroundColor3 = self.Theme.Accent, BackgroundTransparency = 0.3 }):Play()
+                local t = self.Theme
+                Tween(opt, 0.12, { BackgroundColor3 = t.Accent, BackgroundTransparency = 0.3 }):Play()
             end)
             opt.MouseLeave:Connect(function()
-                Tween(opt, 0.12, { BackgroundColor3 = self.Theme.Background, BackgroundTransparency = 0.5 }):Play()
+                local t = self.Theme
+                Tween(opt, 0.12, { BackgroundColor3 = t.Background, BackgroundTransparency = 0.5 }):Play()
             end)
 
             local themeName = name  -- capture per iteration
@@ -237,112 +248,331 @@ function LucidUI.Window:_buildThemeSettings()
     end)
 end
 
+-- ============================================================
+-- Modern HSV color picker modal
+-- ============================================================
+function LucidUI.Window:_openColorPicker(fieldKey, fieldLabel)
+    if self._colorPickerModal and self._colorPickerModal.Parent then
+        self._colorPickerModal:Destroy()
+    end
+
+    local base = self._customTheme[fieldKey]
+    local H, S, V = Color3.toHSV(base)
+
+    local modal = Create("Frame", {
+        Name = "ColorPickerModal",
+        Size = UDim2.fromScale(1, 1),
+        BackgroundColor3 = Color3.new(0, 0, 0),
+        BackgroundTransparency = 0.55,
+        BorderSizePixel = 0,
+        ZIndex = 500,
+        Parent = self.SettingsPanel,
+    })
+    self._colorPickerModal = modal
+
+    local card = Create("Frame", {
+        Size = UDim2.fromOffset(360, 260),
+        Position = UDim2.fromScale(0.5, 0.5),
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        BackgroundColor3 = self.Theme.Background,
+        BackgroundTransparency = 0.05,
+        BorderSizePixel = 0,
+        ZIndex = 501,
+        Parent = modal,
+    })
+    Corner(16, card)
+    Stroke(self.Theme.Border, 1, 0.5, card)
+
+    Create("TextLabel", {
+        Text = fieldLabel,
+        Font = Enum.Font.GothamBold, TextSize = 15,
+        TextColor3 = self.Theme.TextPrimary, BackgroundTransparency = 1,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Position = UDim2.fromOffset(18, 14),
+        Size = UDim2.new(1, -60, 0, 20),
+        ZIndex = 502, Parent = card,
+    })
+
+    local closeBtn = Create("TextButton", {
+        Text = "x", Font = Enum.Font.GothamBold, TextSize = 14,
+        TextColor3 = self.Theme.TextMuted, BackgroundTransparency = 1,
+        Size = UDim2.fromOffset(28, 28),
+        Position = UDim2.new(1, -34, 0, 12),
+        ZIndex = 502, Parent = card,
+    })
+
+    -- SV square
+    local svArea = Create("Frame", {
+        Size = UDim2.fromOffset(250, 155),
+        Position = UDim2.fromOffset(18, 48),
+        BackgroundColor3 = Color3.fromHSV(H, 1, 1),
+        BorderSizePixel = 0, ClipsDescendants = true,
+        ZIndex = 502, Parent = card,
+    })
+    Corner(10, svArea)
+
+    local satOverlay = Create("Frame", {
+        Size = UDim2.fromScale(1, 1),
+        BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+        BorderSizePixel = 0, ZIndex = 503, Parent = svArea,
+    })
+    Create("UIGradient", {
+        Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 0),
+            NumberSequenceKeypoint.new(1, 1),
+        }),
+        Rotation = 0, Parent = satOverlay,
+    })
+
+    local valOverlay = Create("Frame", {
+        Size = UDim2.fromScale(1, 1),
+        BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+        BorderSizePixel = 0, ZIndex = 504, Parent = svArea,
+    })
+    Create("UIGradient", {
+        Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 1),
+            NumberSequenceKeypoint.new(1, 0),
+        }),
+        Rotation = 90, Parent = valOverlay,
+    })
+
+    local dot = Create("Frame", {
+        Size = UDim2.fromOffset(16, 16),
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.fromScale(S, 1 - V),
+        BackgroundColor3 = Color3.new(1, 1, 1),
+        BorderSizePixel = 2, BorderColor3 = Color3.new(0, 0, 0),
+        ZIndex = 505, Parent = svArea,
+    })
+    Corner(8, dot)
+
+    -- Hue strip
+    local hueStrip = Create("Frame", {
+        Size = UDim2.fromOffset(26, 155),
+        Position = UDim2.new(1, -44, 0, 48),
+        BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+        BorderSizePixel = 0, ClipsDescendants = true,
+        ZIndex = 502, Parent = card,
+    })
+    Corner(10, hueStrip)
+    Create("UIGradient", {
+        Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0.000, Color3.fromRGB(255, 0, 0)),
+            ColorSequenceKeypoint.new(0.167, Color3.fromRGB(255, 255, 0)),
+            ColorSequenceKeypoint.new(0.333, Color3.fromRGB(0, 255, 0)),
+            ColorSequenceKeypoint.new(0.500, Color3.fromRGB(0, 255, 255)),
+            ColorSequenceKeypoint.new(0.667, Color3.fromRGB(0, 0, 255)),
+            ColorSequenceKeypoint.new(0.833, Color3.fromRGB(255, 0, 255)),
+            ColorSequenceKeypoint.new(1.000, Color3.fromRGB(255, 0, 0)),
+        }),
+        Rotation = 90, Parent = hueStrip,
+    })
+    local hueDot = Create("Frame", {
+        Size = UDim2.new(1, 0, 0, 5),
+        Position = UDim2.new(0, 0, H, 0),
+        AnchorPoint = Vector2.new(0, 0.5),
+        BackgroundColor3 = Color3.new(1, 1, 1),
+        BorderSizePixel = 1, BorderColor3 = Color3.new(0, 0, 0),
+        ZIndex = 505, Parent = hueStrip,
+    })
+
+    -- Bottom row: preview swatch, hex box, done
+    local preview = Create("Frame", {
+        Size = UDim2.fromOffset(32, 32),
+        Position = UDim2.fromOffset(18, 214),
+        BackgroundColor3 = base,
+        BorderSizePixel = 0, ZIndex = 502, Parent = card,
+    })
+    Corner(8, preview)
+    Stroke(self.Theme.Border, 1, 0.5, preview)
+
+    local hexBox = Create("TextBox", {
+        Text = string.format("#%02X%02X%02X",
+            math.floor(base.R * 255),
+            math.floor(base.G * 255),
+            math.floor(base.B * 255)),
+        Font = Enum.Font.GothamBold, TextSize = 13,
+        TextColor3 = self.Theme.TextPrimary,
+        BackgroundColor3 = self.Theme.Background,
+        BackgroundTransparency = 0.3,
+        ClearTextOnFocus = false,
+        TextXAlignment = Enum.TextXAlignment.Center,
+        Size = UDim2.fromOffset(120, 32),
+        Position = UDim2.fromOffset(60, 214),
+        ZIndex = 502, Parent = card,
+    })
+    Corner(8, hexBox)
+
+    local doneBtn = Create("TextButton", {
+        Text = "Done",
+        Font = Enum.Font.GothamBold, TextSize = 13,
+        TextColor3 = Color3.fromRGB(255, 255, 255),
+        BackgroundColor3 = self.Theme.Accent,
+        AutoButtonColor = false,
+        Size = UDim2.fromOffset(100, 32),
+        Position = UDim2.new(1, -118, 0, 214),
+        ZIndex = 502, Parent = card,
+    })
+    Corner(8, doneBtn)
+
+    local function applyColor()
+        local c = Color3.fromHSV(H, S, V)
+        preview.BackgroundColor3 = c
+        svArea.BackgroundColor3  = Color3.fromHSV(H, 1, 1)
+        dot.Position             = UDim2.fromScale(S, 1 - V)
+        hueDot.Position          = UDim2.new(0, 0, H, 0)
+        hexBox.Text = string.format("#%02X%02X%02X",
+            math.floor(c.R * 255), math.floor(c.G * 255), math.floor(c.B * 255))
+        self._customTheme[fieldKey] = c
+        self:ApplyCustomTheme()
+    end
+
+    -- SV drag
+    local svDrag = false
+    local function svUpdate(input)
+        S = math.clamp((input.Position.X - svArea.AbsolutePosition.X) / svArea.AbsoluteSize.X, 0, 1)
+        V = 1 - math.clamp((input.Position.Y - svArea.AbsolutePosition.Y) / svArea.AbsoluteSize.Y, 0, 1)
+        applyColor()
+    end
+    svArea.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
+            svDrag = true; svUpdate(input)
+        end
+    end)
+    table.insert(self._conns, UserInputService.InputChanged:Connect(function(input)
+        if not svDrag then return end
+        if input.UserInputType == Enum.UserInputType.MouseMovement
+            or input.UserInputType == Enum.UserInputType.Touch then svUpdate(input) end
+    end))
+    table.insert(self._conns, UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then svDrag = false end
+    end))
+
+    -- Hue drag
+    local hueDrag = false
+    local function hueUpdate(input)
+        H = math.clamp((input.Position.Y - hueStrip.AbsolutePosition.Y) / hueStrip.AbsoluteSize.Y, 0, 1)
+        applyColor()
+    end
+    hueStrip.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
+            hueDrag = true; hueUpdate(input)
+        end
+    end)
+    table.insert(self._conns, UserInputService.InputChanged:Connect(function(input)
+        if not hueDrag then return end
+        if input.UserInputType == Enum.UserInputType.MouseMovement
+            or input.UserInputType == Enum.UserInputType.Touch then hueUpdate(input) end
+    end))
+    table.insert(self._conns, UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then hueDrag = false end
+    end))
+
+    -- Hex input
+    hexBox.FocusLost:Connect(function()
+        local hex = hexBox.Text:gsub("#", "")
+        if #hex == 6 then
+            local r = tonumber(hex:sub(1, 2), 16)
+            local g = tonumber(hex:sub(3, 4), 16)
+            local b = tonumber(hex:sub(5, 6), 16)
+            if r and g and b then
+                H, S, V = Color3.toHSV(Color3.fromRGB(r, g, b))
+                applyColor()
+            end
+        end
+    end)
+
+    local function closeModal()
+        modal:Destroy()
+        self._colorPickerModal = nil
+    end
+    BindTap(closeBtn, closeModal)
+    BindTap(doneBtn, closeModal)
+end
+
 function LucidUI.Window:_buildCustomThemeSettings()
     self:_addSettingSection("Custom Theme")
     self:_ensureCustomTheme()
 
     local fields = {
-        { key = "Background",   label = "Background" },
-        { key = "Surface",      label = "Surface" },
-        { key = "SurfaceHover", label = "Surface Hover" },
-        { key = "Accent",       label = "Accent" },
-        { key = "Border",       label = "Border" },
-        { key = "TextPrimary",  label = "Text" },
+        { key = "Background",   label = "Background"     },
+        { key = "Surface",      label = "Surface"        },
+        { key = "SurfaceHover", label = "Surface Hover"  },
+        { key = "Accent",       label = "Accent"         },
+        { key = "Border",       label = "Border"         },
+        { key = "TextPrimary",  label = "Text"           },
     }
     local editorRows = {}
+    local swatches   = {}
 
     for _, field in ipairs(fields) do
         local row = Create("Frame", {
             BackgroundColor3 = self.Theme.Surface,
             BackgroundTransparency = self.Theme.SurfaceTrans,
-            Size = UDim2.new(1, 0, 0, 100),
+            Size = UDim2.new(1, 0, 0, 48),
         })
         Corner(10, row)
         self:_addSettingFrame(row)
         table.insert(editorRows, row)
 
-        Create("TextLabel", {
-            Text = field.label, Font = Enum.Font.GothamMedium, TextSize = 14,
+        local labelLbl = Create("TextLabel", {
+            Text = field.label,
+            Font = Enum.Font.GothamMedium, TextSize = 14,
             TextColor3 = self.Theme.TextPrimary, BackgroundTransparency = 1,
             TextXAlignment = Enum.TextXAlignment.Left,
-            Position = UDim2.fromOffset(14, 8), Size = UDim2.new(1, -80, 0, 18), Parent = row,
+            Position = UDim2.fromOffset(14, 0),
+            Size = UDim2.new(1, -110, 1, 0),
+            Parent = row,
         })
 
-        local preview = Create("Frame", {
-            Size = UDim2.fromOffset(48, 48), Position = UDim2.new(1, -62, 0, 8),
+        local swatch = Create("Frame", {
+            Size = UDim2.fromOffset(32, 32),
+            Position = UDim2.new(1, -46, 0.5, -16),
             BackgroundColor3 = self._customTheme[field.key],
-            BorderSizePixel = 0, Parent = row,
+            BorderSizePixel = 0,
+            Parent = row,
         })
-        Corner(10, preview)
-        Stroke(self.Theme.Border, 1, 0.6, preview)
+        Corner(8, swatch)
+        Stroke(self.Theme.Border, 1, 0.5, swatch)
+        table.insert(swatches, { frame = swatch, key = field.key })
 
-        local channels = {
-            R = math.floor(self._customTheme[field.key].R * 255),
-            G = math.floor(self._customTheme[field.key].G * 255),
-            B = math.floor(self._customTheme[field.key].B * 255),
-        }
-        local function commit()
-            self._customTheme[field.key] = Color3.fromRGB(channels.R, channels.G, channels.B)
-            preview.BackgroundColor3 = self._customTheme[field.key]
-            self:ApplyCustomTheme()
-        end
+        local clickArea = Create("TextButton", {
+            Text = "",
+            BackgroundTransparency = 1,
+            Size = UDim2.fromScale(1, 1),
+            ZIndex = 5,
+            Parent = row,
+        })
+        local fieldKey, fieldLabel = field.key, field.label
+        BindTap(clickArea, function()
+            self:_openColorPicker(fieldKey, fieldLabel)
+        end)
 
-        -- Color picker sliders — these keep InputBegan/InputChanged
-        -- because dragging is their interaction model.
-        for i, ch in ipairs({ "R", "G", "B" }) do
-            local y = 32 + (i - 1) * 20
-            Create("TextLabel", {
-                Text = ch, Font = Enum.Font.GothamBold, TextSize = 12,
-                TextColor3 = self.Theme.TextMuted, BackgroundTransparency = 1,
-                TextXAlignment = Enum.TextXAlignment.Left,
-                Position = UDim2.fromOffset(14, y), Size = UDim2.fromOffset(14, 14), Parent = row,
-            })
-            local track = Create("Frame", {
-                Size = UDim2.new(1, -120, 0, 4), Position = UDim2.fromOffset(34, y + 5),
-                BackgroundColor3 = self.Theme.SliderTrack, BorderSizePixel = 0, Parent = row,
-            })
-            Corner(2, track)
-            local fill = Create("Frame", {
-                Size = UDim2.new(channels[ch] / 255, 0, 1, 0),
-                BackgroundColor3 = self.Theme.Accent, BorderSizePixel = 0, Parent = track,
-            })
-            Corner(2, fill)
-            local drag = Create("TextButton", {
-                Text = "", BackgroundTransparency = 1,
-                Size = UDim2.new(1, 0, 2, 0), Position = UDim2.fromOffset(0, -10), Parent = track,
-            })
-            local active = false
-            local function upd(input)
-                local rel = math.clamp((input.Position.X - track.AbsolutePosition.X) / track.AbsoluteSize.X, 0, 1)
-                channels[ch] = math.floor(rel * 255 + 0.5)
-                fill.Size = UDim2.new(channels[ch] / 255, 0, 1, 0)
-                commit()
-            end
-            drag.InputBegan:Connect(function(input)
-                if input.UserInputType == Enum.UserInputType.MouseButton1
-                    or input.UserInputType == Enum.UserInputType.Touch then
-                    active = true
-                    upd(input)
-                end
-            end)
-            table.insert(self._conns, UserInputService.InputChanged:Connect(function(input)
-                if not active then return end
-                if input.UserInputType == Enum.UserInputType.MouseMovement
-                    or input.UserInputType == Enum.UserInputType.Touch then upd(input) end
-            end))
-            table.insert(self._conns, UserInputService.InputEnded:Connect(function(input)
-                if input.UserInputType == Enum.UserInputType.MouseButton1
-                    or input.UserInputType == Enum.UserInputType.Touch then active = false end
-            end))
-        end
+        clickArea.MouseEnter:Connect(function()
+            local t = self.Theme
+            Tween(row, 0.12, {
+                BackgroundTransparency = math.max(t.SurfaceTrans - 0.1, 0),
+            }):Play()
+        end)
+        clickArea.MouseLeave:Connect(function()
+            local t = self.Theme
+            Tween(row, 0.12, { BackgroundTransparency = t.SurfaceTrans }):Play()
+        end)
     end
 
+    -- Action row
     local actionRow = Create("Frame", {
         BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 36),
     })
     self:_addSettingFrame(actionRow)
     Create("UIListLayout", {
-        FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 6), Parent = actionRow,
+        FillDirection = Enum.FillDirection.Horizontal,
+        Padding = UDim.new(0, 6), Parent = actionRow,
     })
 
     local function mkActionBtn(label, color, cb)
@@ -366,14 +596,19 @@ function LucidUI.Window:_buildCustomThemeSettings()
             Border       = LucidUI.Themes.Default.Border,
             TextPrimary  = LucidUI.Themes.Default.TextPrimary,
         }
+        for _, s in ipairs(swatches) do
+            s.frame.BackgroundColor3 = self._customTheme[s.key]
+        end
         self:ApplyCustomTheme()
         LucidUI:Notify({ Title = "Reset", Message = "Custom theme reset to Default" })
     end)
+
     mkActionBtn("Apply Custom", self.Theme.Accent, function()
         self:ApplyCustomTheme()
         LucidUI:Notify({ Title = "Applied", Message = "Custom theme active" })
     end)
 
+    -- Save row
     local saveRow = Create("Frame", {
         BackgroundColor3 = self.Theme.Surface,
         BackgroundTransparency = self.Theme.SurfaceTrans,
@@ -388,21 +623,29 @@ function LucidUI.Window:_buildCustomThemeSettings()
         TextColor3 = self.Theme.TextPrimary, BackgroundColor3 = self.Theme.Background,
         BackgroundTransparency = 0.3, ClearTextOnFocus = false,
         TextXAlignment = Enum.TextXAlignment.Left,
-        Size = UDim2.new(1, -120, 0, 26), Position = UDim2.new(0, 14, 0.5, -13), Parent = saveRow,
+        Size = UDim2.new(1, -120, 0, 26),
+        Position = UDim2.new(0, 14, 0.5, -13), Parent = saveRow,
     })
     Corner(8, nameBox)
-    Create("UIPadding", { PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8), Parent = nameBox })
+    Create("UIPadding", {
+        PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8), Parent = nameBox,
+    })
+
     local saveBtn = Create("TextButton", {
         Text = "Save As", Font = Enum.Font.GothamBold, TextSize = 12,
         TextColor3 = Color3.fromRGB(255, 255, 255), BackgroundColor3 = self.Theme.Accent,
         BackgroundTransparency = 0.2, AutoButtonColor = false,
-        Size = UDim2.fromOffset(100, 26), Position = UDim2.new(1, -114, 0.5, -13), Parent = saveRow,
+        Size = UDim2.fromOffset(100, 26),
+        Position = UDim2.new(1, -114, 0.5, -13), Parent = saveRow,
     })
     Corner(8, saveBtn)
     BindTap(saveBtn, function()
         local name = nameBox.Text
         if name == "" then
-            LucidUI:Notify({ Title = "Invalid", Message = "Enter a theme name", Accent = Color3.fromRGB(255,80,80) })
+            LucidUI:Notify({
+                Title = "Invalid", Message = "Enter a theme name",
+                Accent = Color3.fromRGB(255, 80, 80),
+            })
             return
         end
         self:SaveCustomTheme(name)
@@ -475,7 +718,6 @@ function LucidUI.Window:_buildSavedThemesSettings()
     end
 
     local function rebuildSaved()
-        -- Destroy every tracked row frame (not just inner buttons)
         for _, f in ipairs(savedRowFrames) do
             if f and f.Parent then f:Destroy() end
         end
@@ -547,10 +789,12 @@ function LucidUI.Window:_buildSavedThemesSettings()
             end, { MoveThreshold = 8 })
 
             nameBtn.MouseEnter:Connect(function()
-                Tween(rowWrap, 0.12, { BackgroundColor3 = self.Theme.Accent, BackgroundTransparency = 0.3 }):Play()
+                local t = self.Theme
+                Tween(rowWrap, 0.12, { BackgroundColor3 = t.Accent, BackgroundTransparency = 0.3 }):Play()
             end)
             nameBtn.MouseLeave:Connect(function()
-                Tween(rowWrap, 0.12, { BackgroundColor3 = self.Theme.Background, BackgroundTransparency = 0.5 }):Play()
+                local t = self.Theme
+                Tween(rowWrap, 0.12, { BackgroundColor3 = t.Background, BackgroundTransparency = 0.5 }):Play()
             end)
         end
 
