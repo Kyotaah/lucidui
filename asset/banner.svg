@@ -1,13 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 400" width="1280" height="400" role="img" aria-label="LucidUI — Next modern UI library inspired by Luna UI">
   <defs>
-    <!-- Background radial glow -->
     <radialGradient id="bgGlow" cx="50%" cy="52%" r="70%">
       <stop offset="0%"   stop-color="#0f1526"/>
       <stop offset="55%"  stop-color="#070a12"/>
       <stop offset="100%" stop-color="#03040a"/>
     </radialGradient>
 
-    <!-- Aura: cyan + violet blend behind the title -->
     <radialGradient id="aura" cx="50%" cy="50%" r="50%">
       <stop offset="0%"   stop-color="#5ad2ff" stop-opacity="0.45"/>
       <stop offset="35%"  stop-color="#a97bff" stop-opacity="0.22"/>
@@ -15,7 +13,6 @@
       <stop offset="100%" stop-color="#5ad2ff" stop-opacity="0"/>
     </radialGradient>
 
-    <!-- Chrome gradient for the title text -->
     <linearGradient id="chrome" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%"   stop-color="#f8fbff"/>
       <stop offset="28%"  stop-color="#c8d6ec"/>
@@ -24,7 +21,6 @@
       <stop offset="100%" stop-color="#2a3d63"/>
     </linearGradient>
 
-    <!-- Divider: transparent → cyan → white → cyan → transparent -->
     <linearGradient id="divider" x1="0" y1="0" x2="1" y2="0">
       <stop offset="0%"   stop-color="#5ad2ff" stop-opacity="0"/>
       <stop offset="22%"  stop-color="#5ad2ff" stop-opacity="0.55"/>
@@ -33,14 +29,21 @@
       <stop offset="100%" stop-color="#5ad2ff" stop-opacity="0"/>
     </linearGradient>
 
-    <!-- Glass rim: subtle white top edge, fades out -->
     <linearGradient id="rim" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%"   stop-color="#ffffff" stop-opacity="0.10"/>
       <stop offset="40%"  stop-color="#ffffff" stop-opacity="0.02"/>
       <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
     </linearGradient>
 
-    <!-- Title drop shadow filter -->
+    <!-- Shimmer stripe that sweeps across the title -->
+    <linearGradient id="shimmer" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%"   stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset="45%"  stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset="50%"  stop-color="#ffffff" stop-opacity="0.75"/>
+      <stop offset="55%"  stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+
     <filter id="titleShadow" x="-20%" y="-20%" width="140%" height="160%">
       <feGaussianBlur in="SourceAlpha" stdDeviation="6"/>
       <feOffset dx="0" dy="4" result="offsetBlur"/>
@@ -53,35 +56,123 @@
       </feMerge>
     </filter>
 
-    <!-- Soft glow filter for aura and shards -->
     <filter id="softGlow" x="-50%" y="-50%" width="200%" height="200%">
       <feGaussianBlur stdDeviation="18"/>
     </filter>
+
+    <!-- Mask shaped exactly like the title, so shimmer stays inside glyphs -->
+    <mask id="titleMask">
+      <text x="640" y="182"
+            text-anchor="middle"
+            font-family="'Inter', 'SF Pro Display', -apple-system, 'Segoe UI', system-ui, sans-serif"
+            font-weight="900"
+            font-size="120"
+            letter-spacing="6"
+            fill="#ffffff">LUCID UI</text>
+    </mask>
   </defs>
 
   <!-- ─── Background ─────────────────────────────────────── -->
   <rect width="1280" height="400" fill="url(#bgGlow)"/>
-
-  <!-- Glass rim: subtle rounded border -->
   <rect x="0.5" y="0.5" width="1279" height="399" rx="0" ry="0" fill="none" stroke="url(#rim)" stroke-width="1"/>
 
-  <!-- ─── Aura behind the title ─────────────────────────── -->
-  <ellipse cx="640" cy="200" rx="520" ry="150" fill="url(#aura)" filter="url(#softGlow)"/>
+  <!-- ─── Aura: pulsing ellipse ─────────────────────────── -->
+  <ellipse cx="640" cy="200" rx="520" ry="150" fill="url(#aura)" filter="url(#softGlow)">
+    <animate attributeName="rx" values="500;545;500" dur="4s" repeatCount="indefinite" calcMode="spline"
+             keyTimes="0;0.5;1" keySplines="0.42 0 0.58 1;0.42 0 0.58 1"/>
+    <animate attributeName="ry" values="145;160;145" dur="4s" repeatCount="indefinite" calcMode="spline"
+             keyTimes="0;0.5;1" keySplines="0.42 0 0.58 1;0.42 0 0.58 1"/>
+    <animate attributeName="opacity" values="0.7;1;0.7" dur="4s" repeatCount="indefinite" calcMode="spline"
+             keyTimes="0;0.5;1" keySplines="0.42 0 0.58 1;0.42 0 0.58 1"/>
+  </ellipse>
 
-  <!-- ─── Subtle shard accents ──────────────────────────── -->
-  <!-- Left side -->
-  <polygon points="138,142 148,160 126,160" fill="#5ad2ff" opacity="0.35"/>
-  <polygon points="196,268 203,280 187,280" fill="#a97bff" opacity="0.28"/>
-  <polygon points="96,224 102,234 88,234"  fill="#ffffff" opacity="0.22"/>
-  <polygon points="222,124 227,133 215,133" fill="#c8d6ec" opacity="0.24"/>
+  <!-- ─── Drifting shards: left side ────────────────────── -->
+  <g opacity="0.9">
+    <polygon points="138,142 148,160 126,160" fill="#5ad2ff" opacity="0.35">
+      <animateTransform attributeName="transform" type="translate"
+        values="0 0; -8 -12; -14 2; -6 12; 0 0"
+        dur="9s" repeatCount="indefinite" calcMode="spline"
+        keyTimes="0;0.25;0.5;0.75;1"
+        keySplines="0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1"/>
+      <animate attributeName="opacity" values="0.35;0.65;0.35;0.55;0.35"
+        dur="9s" repeatCount="indefinite"/>
+    </polygon>
 
-  <!-- Right side -->
-  <polygon points="1142,138 1152,156 1130,156" fill="#a97bff" opacity="0.32"/>
-  <polygon points="1088,276 1095,288 1079,288" fill="#5ad2ff" opacity="0.28"/>
-  <polygon points="1196,222 1202,232 1188,232" fill="#ffffff" opacity="0.20"/>
-  <polygon points="1042,118 1047,127 1035,127"   fill="#c8d6ec" opacity="0.22"/>
+    <polygon points="196,268 203,280 187,280" fill="#a97bff" opacity="0.28">
+      <animateTransform attributeName="transform" type="translate"
+        values="0 0; 6 -10; 12 -4; 4 8; 0 0"
+        dur="7.5s" repeatCount="indefinite" calcMode="spline"
+        keyTimes="0;0.25;0.5;0.75;1"
+        keySplines="0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1"/>
+      <animate attributeName="opacity" values="0.28;0.6;0.4;0.7;0.28"
+        dur="7.5s" repeatCount="indefinite"/>
+    </polygon>
 
-  <!-- ─── Title ──────────────────────────────────────────── -->
+    <polygon points="96,224 102,234 88,234" fill="#ffffff" opacity="0.22">
+      <animateTransform attributeName="transform" type="translate"
+        values="0 0; -5 -8; -9 -2; -3 9; 0 0"
+        dur="11s" repeatCount="indefinite" calcMode="spline"
+        keyTimes="0;0.25;0.5;0.75;1"
+        keySplines="0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1"/>
+      <animate attributeName="opacity" values="0.22;0.5;0.22;0.4;0.22"
+        dur="11s" repeatCount="indefinite"/>
+    </polygon>
+
+    <polygon points="222,124 227,133 215,133" fill="#c8d6ec" opacity="0.24">
+      <animateTransform attributeName="transform" type="translate"
+        values="0 0; 8 -6; 4 -14; -6 -8; 0 0"
+        dur="8s" repeatCount="indefinite" calcMode="spline"
+        keyTimes="0;0.25;0.5;0.75;1"
+        keySplines="0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1"/>
+      <animate attributeName="opacity" values="0.24;0.55;0.35;0.6;0.24"
+        dur="8s" repeatCount="indefinite"/>
+    </polygon>
+  </g>
+
+  <!-- ─── Drifting shards: right side ───────────────────── -->
+  <g opacity="0.9">
+    <polygon points="1142,138 1152,156 1130,156" fill="#a97bff" opacity="0.32">
+      <animateTransform attributeName="transform" type="translate"
+        values="0 0; 8 -12; 14 2; 6 12; 0 0"
+        dur="8.5s" repeatCount="indefinite" calcMode="spline"
+        keyTimes="0;0.25;0.5;0.75;1"
+        keySplines="0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1"/>
+      <animate attributeName="opacity" values="0.32;0.62;0.32;0.5;0.32"
+        dur="8.5s" repeatCount="indefinite"/>
+    </polygon>
+
+    <polygon points="1088,276 1095,288 1079,288" fill="#5ad2ff" opacity="0.28">
+      <animateTransform attributeName="transform" type="translate"
+        values="0 0; -6 -10; -12 -4; -4 8; 0 0"
+        dur="10s" repeatCount="indefinite" calcMode="spline"
+        keyTimes="0;0.25;0.5;0.75;1"
+        keySplines="0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1"/>
+      <animate attributeName="opacity" values="0.28;0.58;0.28;0.5;0.28"
+        dur="10s" repeatCount="indefinite"/>
+    </polygon>
+
+    <polygon points="1196,222 1202,232 1188,232" fill="#ffffff" opacity="0.20">
+      <animateTransform attributeName="transform" type="translate"
+        values="0 0; 5 -8; 9 -2; 3 9; 0 0"
+        dur="9.5s" repeatCount="indefinite" calcMode="spline"
+        keyTimes="0;0.25;0.5;0.75;1"
+        keySplines="0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1"/>
+      <animate attributeName="opacity" values="0.20;0.48;0.20;0.42;0.20"
+        dur="9.5s" repeatCount="indefinite"/>
+    </polygon>
+
+    <polygon points="1042,118 1047,127 1035,127" fill="#c8d6ec" opacity="0.22">
+      <animateTransform attributeName="transform" type="translate"
+        values="0 0; -8 -6; -4 -14; 6 -8; 0 0"
+        dur="7s" repeatCount="indefinite" calcMode="spline"
+        keyTimes="0;0.25;0.5;0.75;1"
+        keySplines="0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1;0.42 0 0.58 1"/>
+      <animate attributeName="opacity" values="0.22;0.5;0.3;0.55;0.22"
+        dur="7s" repeatCount="indefinite"/>
+    </polygon>
+  </g>
+
+  <!-- ─── Title ─────────────────────────────────────────── -->
   <g filter="url(#titleShadow)">
     <text x="640" y="182"
           text-anchor="middle"
@@ -92,8 +183,41 @@
           fill="url(#chrome)">LUCID UI</text>
   </g>
 
-  <!-- ─── Divider ───────────────────────────────────────── -->
-  <rect x="470" y="216" width="340" height="1" fill="url(#divider)"/>
+  <!-- ─── Shimmer sweep, clipped to the title glyphs ────── -->
+  <g mask="url(#titleMask)">
+    <rect x="-400" y="60" width="800" height="140" fill="url(#shimmer)" opacity="0.6">
+      <animate attributeName="x" values="-400; 680; 680" dur="4.5s" repeatCount="indefinite"
+               keyTimes="0; 0.7; 1" calcMode="spline"
+               keySplines="0.4 0 0.2 1; 0 0 1 1"/>
+    </rect>
+  </g>
+
+  <!-- ─── Glitch flicker (rare, brief) ──────────────────── -->
+  <g opacity="0">
+    <text x="642" y="182"
+          text-anchor="middle"
+          font-family="'Inter', 'SF Pro Display', -apple-system, 'Segoe UI', system-ui, sans-serif"
+          font-weight="900"
+          font-size="120"
+          letter-spacing="6"
+          fill="#ff4d6d">LUCID UI</text>
+    <text x="638" y="183"
+          text-anchor="middle"
+          font-family="'Inter', 'SF Pro Display', -apple-system, 'Segoe UI', system-ui, sans-serif"
+          font-weight="900"
+          font-size="120"
+          letter-spacing="6"
+          fill="#5ad2ff">LUCID UI</text>
+    <animate attributeName="opacity" values="0;0;0;0;0;1;0.6;1;0;0;0;0"
+             dur="6s" repeatCount="indefinite"
+             keyTimes="0;0.15;0.3;0.45;0.6;0.62;0.65;0.68;0.7;0.85;0.95;1"/>
+  </g>
+
+  <!-- ─── Divider with pulsing opacity ──────────────────── -->
+  <rect x="470" y="216" width="340" height="1" fill="url(#divider)">
+    <animate attributeName="opacity" values="0.7;1;0.7" dur="3.5s" repeatCount="indefinite" calcMode="spline"
+             keyTimes="0;0.5;1" keySplines="0.42 0 0.58 1;0.42 0 0.58 1"/>
+  </rect>
 
   <!-- ─── Subtitle ──────────────────────────────────────── -->
   <text x="640" y="262"
