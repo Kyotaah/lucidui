@@ -1,14 +1,23 @@
 --[[
     Window — creates the main window and every layer that sits inside it.
 
+    Gesture handling:
+      Header drag and resize share a single gesture lock (`gesture`
+      table below). Whichever fires InputBegan first owns the gesture;
+      any other input object is ignored. This prevents the "resize and
+      drag at the same time" bug on multi-touch devices, and stops a
+      second finger on the header from hijacking an in-progress drag.
+
+      Each gesture tracks the specific InputObject that started it, so
+      InputChanged and InputEnded only act on the correct finger.
+
     Click handling:
       Every actual click goes through BindTap (from 01b_polish.lua).
-      Drag interactions — window header, resize handle, floating pill —
-      stay on InputBegan/InputChanged because dragging IS their purpose.
 
-      The floating pill uses BindTap for restore, which replaces the
-      old _pillMoved workaround: a drag now simply never fires the
-      callback, so no manual "did the pill move?" check is needed.
+    Keybinds:
+      RightShift toggles window visibility.
+      W.PillKeybind (configurable, default Home) toggles pill mode:
+      press once to minimize to pill, press again to restore.
 ]]
 
 LucidUI.Window = {}
@@ -27,6 +36,11 @@ local function TweenColor(inst, prop, target, time)
     ):Play()
 end
 
+local function isPrimaryPointer(input)
+    return input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch
+end
+
 function LucidUI:CreateWindow(config)
     config = config or {}
 
@@ -41,6 +55,8 @@ function LucidUI:CreateWindow(config)
     W.Minimized    = false
     W.Floating     = false
     W.SettingsOpen = false
+
+    W.PillKeybind  = config.PillKeybind or Enum.KeyCode.Home
 
     W._configData     = {}
     W._elementsByFlag = {}
@@ -280,44 +296,28 @@ function LucidUI:CreateWindow(config)
     })
 
     -- ============================================================
-    -- Window drag (header)
+    -- Shared gesture state — header drag and resize
     -- ============================================================
-    local dragging, dragStart, startPos = false, nil, nil
+    -- `gesture.input` tracks the specific InputObject that started
+    -- the current gesture. Any other input object is rejected, so
+    -- two-finger chaos can't happen.
+    local gesture = {
+        input        = nil,
+        mode         = nil,  -- "drag" | "resize"
+        startPos     = nil,
+        startSize    = nil,
+        mainStartPos = nil,
+    }
 
     W.Header.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-            or input.UserInputType == Enum.UserInputType.Touch then
-            dragging  = true
-            dragStart = input.Position
-            startPos  = W.Main.Position
-        end
+        if not isPrimaryPointer(input) then return end
+        if gesture.input then return end   -- already busy
+        gesture.input        = input
+        gesture.mode         = "drag"
+        gesture.startPos     = input.Position
+        gesture.mainStartPos = W.Main.Position
     end)
 
-    table.insert(W._conns, UserInputService.InputChanged:Connect(function(input)
-        if not dragging then return end
-        if input.UserInputType == Enum.UserInputType.MouseMovement
-            or input.UserInputType == Enum.UserInputType.Touch then
-            local d = input.Position - dragStart
-            W.Main.Position = UDim2.new(
-                startPos.X.Scale, startPos.X.Offset + d.X,
-                startPos.Y.Scale, startPos.Y.Offset + d.Y
-            )
-        end
-    end))
-
-    table.insert(W._conns, UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-            or input.UserInputType == Enum.UserInputType.Touch then
-            if dragging then
-                dragging = false
-                ClampPosition(W.Main)
-            end
-        end
-    end))
-
-    -- ============================================================
-    -- Resize handle
-    -- ============================================================
     local resizeHandle = Create("TextButton", {
         Text = "",
         BackgroundTransparency = 1,
@@ -353,24 +353,28 @@ function LucidUI:CreateWindow(config)
 
     W._gripFrames = { grip1, grip2 }
 
-    local resizing, rStart, rStartSize = false, nil, nil
-
     resizeHandle.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-            or input.UserInputType == Enum.UserInputType.Touch then
-            resizing   = true
-            rStart     = input.Position
-            rStartSize = { X = W._width, Y = W._height }
-        end
+        if not isPrimaryPointer(input) then return end
+        if gesture.input then return end   -- drag already owns the lock
+        gesture.input     = input
+        gesture.mode      = "resize"
+        gesture.startPos  = input.Position
+        gesture.startSize = { X = W._width, Y = W._height }
     end)
 
     table.insert(W._conns, UserInputService.InputChanged:Connect(function(input)
-        if not resizing then return end
-        if input.UserInputType == Enum.UserInputType.MouseMovement
-            or input.UserInputType == Enum.UserInputType.Touch then
-            local d = input.Position - rStart
-            W._width  = math.clamp(rStartSize.X + d.X, W._minWidth,  W._maxWidth)
-            W._height = math.clamp(rStartSize.Y + d.Y, W._minHeight, W._maxHeight)
+        if input ~= gesture.input then return end
+
+        if gesture.mode == "drag" then
+            local d = input.Position - gesture.startPos
+            W.Main.Position = UDim2.new(
+                gesture.mainStartPos.X.Scale, gesture.mainStartPos.X.Offset + d.X,
+                gesture.mainStartPos.Y.Scale, gesture.mainStartPos.Y.Offset + d.Y
+            )
+        elseif gesture.mode == "resize" then
+            local d = input.Position - gesture.startPos
+            W._width  = math.clamp(gesture.startSize.X + d.X, W._minWidth,  W._maxWidth)
+            W._height = math.clamp(gesture.startSize.Y + d.Y, W._minHeight, W._maxHeight)
             W._fullSize      = UDim2.fromOffset(W._width, W._height)
             W._collapsedSize = UDim2.fromOffset(W._width, 44)
             if not W.Minimized then
@@ -381,26 +385,33 @@ function LucidUI:CreateWindow(config)
     end))
 
     table.insert(W._conns, UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-            or input.UserInputType == Enum.UserInputType.Touch then
-            if resizing then
-                resizing = false
-                ClampPosition(W.Main)
-            end
+        if input ~= gesture.input then return end
+        if gesture.mode == "drag" or gesture.mode == "resize" then
+            ClampPosition(W.Main)
         end
+        gesture.input        = nil
+        gesture.mode         = nil
+        gesture.startPos     = nil
+        gesture.startSize    = nil
+        gesture.mainStartPos = nil
     end))
 
     -- ============================================================
-    -- Global keybind: RightShift toggles visibility
+    -- Global keybinds: RightShift toggles visibility,
+    -- W.PillKeybind toggles pill mode.
     -- ============================================================
     table.insert(W._conns, UserInputService.InputBegan:Connect(function(input, processed)
         if processed then return end
+        if LucidUI._keyListening then return end
+
         if input.KeyCode == Enum.KeyCode.RightShift then
             if W.Floating then
                 W:RestoreFromPill()
             else
                 W:SetVisible(not W.Visible)
             end
+        elseif W.PillKeybind and input.KeyCode == W.PillKeybind then
+            W:TogglePillMode()
         end
     end))
 
@@ -419,9 +430,6 @@ function LucidUI:CreateWindow(config)
         ZIndex = 5,
         Parent = W.Main,
     })
-    -- Round only the bottom corners so the panel matches the main
-    -- window's 18px radius. The top stays square because it butts
-    -- against the header separator.
     local spCorner = Instance.new("UICorner")
     spCorner.TopLeftRadius     = UDim.new(0, 0)
     spCorner.TopRightRadius    = UDim.new(0, 0)
@@ -455,7 +463,12 @@ function LucidUI:CreateWindow(config)
         Parent = backBtn,
     })
 
-    BindTap(backBtn, function() W:ToggleSettings(false) end, { MoveThreshold = 8 })
+    BindTap(backBtn, function()
+        -- Cancel any in-progress keybind listener so it doesn't
+        -- keep swallowing keyboard input after the panel closes.
+        if W._cancelKeybindListen then pcall(W._cancelKeybindListen) end
+        W:ToggleSettings(false)
+    end, { MoveThreshold = 8 })
 
     Create("TextLabel", {
         Text = "Settings",
@@ -547,42 +560,34 @@ function LucidUI:CreateWindow(config)
         Parent = W.FloatingPill,
     })
 
-    -- Pill drag
-    local pillDragging, pillDragStart, pillStartPos = false, nil, nil
+    -- Pill drag — own gesture lock, same pattern as header/resize.
+    local pillGesture = { input = nil, startPos = nil, startWindowPos = nil }
 
     W.FloatingPill.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-            or input.UserInputType == Enum.UserInputType.Touch then
-            pillDragging  = true
-            pillDragStart = input.Position
-            pillStartPos  = W.FloatingPill.Position
-        end
+        if not isPrimaryPointer(input) then return end
+        if pillGesture.input then return end
+        pillGesture.input          = input
+        pillGesture.startPos       = input.Position
+        pillGesture.startWindowPos = W.FloatingPill.Position
     end)
 
     table.insert(W._conns, UserInputService.InputChanged:Connect(function(input)
-        if not pillDragging then return end
-        if input.UserInputType == Enum.UserInputType.MouseMovement
-            or input.UserInputType == Enum.UserInputType.Touch then
-            local d = input.Position - pillDragStart
-            W.FloatingPill.Position = UDim2.new(
-                pillStartPos.X.Scale, pillStartPos.X.Offset + d.X,
-                pillStartPos.Y.Scale, pillStartPos.Y.Offset + d.Y
-            )
-        end
+        if input ~= pillGesture.input then return end
+        local d = input.Position - pillGesture.startPos
+        W.FloatingPill.Position = UDim2.new(
+            pillGesture.startWindowPos.X.Scale, pillGesture.startWindowPos.X.Offset + d.X,
+            pillGesture.startWindowPos.Y.Scale, pillGesture.startWindowPos.Y.Offset + d.Y
+        )
     end))
 
     table.insert(W._conns, UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-            or input.UserInputType == Enum.UserInputType.Touch then
-            if pillDragging then
-                pillDragging = false
-                ClampPosition(W.FloatingPill)
-            end
-        end
+        if input ~= pillGesture.input then return end
+        ClampPosition(W.FloatingPill)
+        pillGesture.input          = nil
+        pillGesture.startPos       = nil
+        pillGesture.startWindowPos = nil
     end))
 
-    -- Pill tap (restore). BindTap already filters drags out, so no
-    -- _pillMoved flag is needed.
     BindTap(W.FloatingPill, function()
         W:RestoreFromPill()
     end, { MoveThreshold = 8 })
@@ -689,6 +694,16 @@ function LucidUI.Window:RestoreFromPill()
     task.delay(0.4, function() ClampPosition(self.Main) end)
 end
 
+-- New: toggle between window and pill with one method. The
+-- configurable PillKeybind calls this.
+function LucidUI.Window:TogglePillMode()
+    if self.Floating then
+        self:RestoreFromPill()
+    else
+        self:MinimizeToPill()
+    end
+end
+
 function LucidUI.Window:ToggleSettings(state)
     if state == nil then state = not self.SettingsOpen end
     self.SettingsOpen = state
@@ -711,6 +726,9 @@ function LucidUI.Window:ToggleSettings(state)
         if self._themeSlotsRefresh    then pcall(self._themeSlotsRefresh) end
         if self._themeDropdownRefresh then pcall(self._themeDropdownRefresh) end
     else
+        -- Cancel any active keybind listener before closing.
+        if self._cancelKeybindListen then pcall(self._cancelKeybindListen) end
+
         local slide = TweenService:Create(self.SettingsPanel, Ease.In(0.26), { Position = HIDDEN })
         slide:Play()
         TweenService:Create(self.SettingsPanel, Ease.FadeOut(0.22), { GroupTransparency = 1 }):Play()
@@ -729,24 +747,20 @@ function LucidUI.Window:ToggleSettings(state)
 end
 
 function LucidUI.Window:Destroy()
-    -- Stop every connection this window owns
     for _, c in ipairs(self._conns or {}) do
         if typeof(c) == "RBXScriptConnection" then c:Disconnect() end
     end
     self._conns = {}
 
-    -- Clear the slider lock if this window owns it
     if LucidUI._activeSlider and LucidUI._activeSlider.Parent == self.Gui then
         LucidUI._activeSlider = nil
     end
 
-    -- Destroy the ScreenGui
     if self.Gui then
         self.Gui:Destroy()
         self.Gui = nil
     end
 
-    -- Remove from the registry
     for i, w in ipairs(LucidUI._windows) do
         if w == self then
             table.remove(LucidUI._windows, i)
