@@ -1,0 +1,117 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 400" width="1280" height="400" role="img" aria-label="LucidUI — Next modern UI library inspired by Luna UI">
+  <defs>
+    <!-- Background radial glow -->
+    <radialGradient id="bgGlow" cx="50%" cy="52%" r="70%">
+      <stop offset="0%"   stop-color="#0f1526"/>
+      <stop offset="55%"  stop-color="#070a12"/>
+      <stop offset="100%" stop-color="#03040a"/>
+    </radialGradient>
+
+    <!-- Aura: cyan + violet blend behind the title -->
+    <radialGradient id="aura" cx="50%" cy="50%" r="50%">
+      <stop offset="0%"   stop-color="#5ad2ff" stop-opacity="0.45"/>
+      <stop offset="35%"  stop-color="#a97bff" stop-opacity="0.22"/>
+      <stop offset="70%"  stop-color="#5ad2ff" stop-opacity="0.06"/>
+      <stop offset="100%" stop-color="#5ad2ff" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Chrome gradient for the title text -->
+    <linearGradient id="chrome" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#f8fbff"/>
+      <stop offset="28%"  stop-color="#c8d6ec"/>
+      <stop offset="52%"  stop-color="#9fb4d8"/>
+      <stop offset="72%"  stop-color="#4d6a9c"/>
+      <stop offset="100%" stop-color="#2a3d63"/>
+    </linearGradient>
+
+    <!-- Divider: transparent → cyan → white → cyan → transparent -->
+    <linearGradient id="divider" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%"   stop-color="#5ad2ff" stop-opacity="0"/>
+      <stop offset="22%"  stop-color="#5ad2ff" stop-opacity="0.55"/>
+      <stop offset="50%"  stop-color="#ffffff" stop-opacity="0.95"/>
+      <stop offset="78%"  stop-color="#5ad2ff" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#5ad2ff" stop-opacity="0"/>
+    </linearGradient>
+
+    <!-- Glass rim: subtle white top edge, fades out -->
+    <linearGradient id="rim" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#ffffff" stop-opacity="0.10"/>
+      <stop offset="40%"  stop-color="#ffffff" stop-opacity="0.02"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+
+    <!-- Title drop shadow filter -->
+    <filter id="titleShadow" x="-20%" y="-20%" width="140%" height="160%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="6"/>
+      <feOffset dx="0" dy="4" result="offsetBlur"/>
+      <feComponentTransfer in="offsetBlur">
+        <feFuncA type="linear" slope="0.45"/>
+      </feComponentTransfer>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- Soft glow filter for aura and shards -->
+    <filter id="softGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="18"/>
+    </filter>
+  </defs>
+
+  <!-- ─── Background ─────────────────────────────────────── -->
+  <rect width="1280" height="400" fill="url(#bgGlow)"/>
+
+  <!-- Glass rim: subtle rounded border -->
+  <rect x="0.5" y="0.5" width="1279" height="399" rx="0" ry="0" fill="none" stroke="url(#rim)" stroke-width="1"/>
+
+  <!-- ─── Aura behind the title ─────────────────────────── -->
+  <ellipse cx="640" cy="200" rx="520" ry="150" fill="url(#aura)" filter="url(#softGlow)"/>
+
+  <!-- ─── Subtle shard accents ──────────────────────────── -->
+  <!-- Left side -->
+  <polygon points="138,142 148,160 126,160" fill="#5ad2ff" opacity="0.35"/>
+  <polygon points="196,268 203,280 187,280" fill="#a97bff" opacity="0.28"/>
+  <polygon points="96,224 102,234 88,234"  fill="#ffffff" opacity="0.22"/>
+  <polygon points="222,124 227,133 215,133" fill="#c8d6ec" opacity="0.24"/>
+
+  <!-- Right side -->
+  <polygon points="1142,138 1152,156 1130,156" fill="#a97bff" opacity="0.32"/>
+  <polygon points="1088,276 1095,288 1079,288" fill="#5ad2ff" opacity="0.28"/>
+  <polygon points="1196,222 1202,232 1188,232" fill="#ffffff" opacity="0.20"/>
+  <polygon points="1042,118 1047,127 1035,127"   fill="#c8d6ec" opacity="0.22"/>
+
+  <!-- ─── Title ──────────────────────────────────────────── -->
+  <g filter="url(#titleShadow)">
+    <text x="640" y="182"
+          text-anchor="middle"
+          font-family="'Inter', 'SF Pro Display', -apple-system, 'Segoe UI', system-ui, sans-serif"
+          font-weight="900"
+          font-size="120"
+          letter-spacing="6"
+          fill="url(#chrome)">LUCID UI</text>
+  </g>
+
+  <!-- ─── Divider ───────────────────────────────────────── -->
+  <rect x="470" y="216" width="340" height="1" fill="url(#divider)"/>
+
+  <!-- ─── Subtitle ──────────────────────────────────────── -->
+  <text x="640" y="262"
+        text-anchor="middle"
+        font-family="'Inter', 'SF Pro Text', -apple-system, 'Segoe UI', system-ui, sans-serif"
+        font-weight="500"
+        font-size="20"
+        letter-spacing="0.5">
+    <tspan fill="#7a8bad">Next modern UI library inspired by </tspan><tspan fill="#5ad2ff" font-weight="600">Luna UI</tspan><tspan fill="#7a8bad">.</tspan>
+  </text>
+
+  <!-- ─── Bottom meta strip ─────────────────────────────── -->
+  <text x="640" y="330"
+        text-anchor="middle"
+        font-family="'Inter', 'SF Mono', 'Menlo', 'Consolas', monospace"
+        font-size="12"
+        letter-spacing="3"
+        fill="#5b6a89">
+    MIT · NO KEY SYSTEM · NO DEPENDENCIES
+  </text>
+</svg>
