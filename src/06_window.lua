@@ -38,6 +38,7 @@ function LucidUI:CreateWindow(config)
     W._themeElements  = {}
     W._conns          = {}
     W._accentOverride = nil
+    W._pressOwner     = nil
 
     W._minWidth,  W._minHeight = 320, 240
     W._maxWidth,  W._maxHeight = 1200, 900
