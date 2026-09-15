@@ -2,12 +2,21 @@
     Helpers — services, easing, instance constructors, glass rendering,
     viewport utilities. Polish helpers live in 01b_polish.lua.
 
-    ApplyGlass now produces a layered glass effect:
+    ApplyGlass produces a layered glass effect:
       • Base tinted translucent background
-      • Bright top-edge highlight (light refracting off the rim)
-      • Diagonal specular sheen (glass catching light from top-left)
+      • Top-edge highlight (light refracting off the rim)
+      • Static diagonal sheen (glass catching light from top-left)
+      • Animated light sweep (a soft bright band that glides across)
       • Subtle bottom-edge shade (grounding the panel)
-    Roblox has no backdrop blur, so this approximates the look.
+
+    All highlight overlays get corner radii that match the panel, so
+    they don't poke past rounded corners. The sweep animates by tweening
+    UIGradient.Offset, and dies cleanly when the parent is destroyed.
+
+    Options:
+      cornerRadius (number, default 18)
+      animated     (bool,   default true)  — enables the light sweep
+      sweepGap     (number, default 5)     — seconds between sweeps
 ]]
 
 local Players          = game:GetService("Players")
@@ -67,6 +76,17 @@ local function Stroke(color, thickness, transparency, parent)
     })
 end
 
+-- Custom corner helper for panels that need different radii per corner
+local function PartialCorner(parent, tl, tr, bl, br)
+    local c = Instance.new("UICorner")
+    c.TopLeftRadius     = UDim.new(0, tl or 0)
+    c.TopRightRadius    = UDim.new(0, tr or 0)
+    c.BottomLeftRadius  = UDim.new(0, bl or 0)
+    c.BottomRightRadius = UDim.new(0, br or 0)
+    c.Parent = parent
+    return c
+end
+
 local function Tween(inst, time, props, style, dir)
     return TweenService:Create(
         inst,
@@ -77,18 +97,20 @@ end
 
 local function ApplyGlass(frame, theme, opts)
     opts = opts or {}
-    local radius = opts.cornerRadius or 18
+    local radius    = opts.cornerRadius or 18
+    local animated  = (opts.animated ~= false)
+    local sweepGap  = opts.sweepGap or 5
 
     frame.BackgroundColor3       = theme.Background
     frame.BackgroundTransparency = theme.BackgroundTrans or 0.35
     frame.BorderSizePixel        = 0
     Corner(radius, frame)
-
-    -- Outer border: subtle, slightly more transparent than before
     Stroke(theme.Border, 1, math.min((theme.BorderTrans or 0.85) + 0.05, 1), frame)
 
-    -- Top-edge highlight: bright at the top, fades to nothing by the middle.
-    -- Simulates light refracting off the upper rim of the glass.
+    -- ── Top-edge highlight ─────────────────────────────────────
+    -- Bright at the top, fades by the middle. Top corners rounded
+    -- to match the parent, bottom corners square (it fades before
+    -- reaching them).
     local topHighlight = Create("Frame", {
         Name = "GlassTopHighlight",
         Size = UDim2.fromScale(1, 0.5),
@@ -99,6 +121,7 @@ local function ApplyGlass(frame, theme, opts)
         ZIndex = 0,
         Parent = frame,
     })
+    PartialCorner(topHighlight, radius, radius, 0, 0)
     Create("UIGradient", {
         Transparency = NumberSequence.new({
             NumberSequenceKeypoint.new(0.0, 0.0),
@@ -109,18 +132,19 @@ local function ApplyGlass(frame, theme, opts)
         Parent = topHighlight,
     })
 
-    -- Diagonal specular sheen: brighter at top-left, invisible by bottom-right.
-    -- This is the "glass catching light" effect.
-    local sheen = Create("Frame", {
-        Name = "GlassSheen",
+    -- ── Static diagonal sheen ──────────────────────────────────
+    -- Bright at top-left, invisible by bottom-right. This is the
+    -- "glass catching light" base layer that stays put.
+    local sheenBase = Create("Frame", {
+        Name = "GlassSheenBase",
         Size = UDim2.fromScale(1, 1),
         BackgroundColor3 = Color3.fromRGB(255, 255, 255),
-        BackgroundTransparency = 0.90,
+        BackgroundTransparency = 0.92,
         BorderSizePixel = 0,
         ZIndex = 0,
         Parent = frame,
     })
-    Corner(radius, sheen)
+    Corner(radius, sheenBase)
     Create("UIGradient", {
         Transparency = NumberSequence.new({
             NumberSequenceKeypoint.new(0.0, 0.0),
@@ -128,11 +152,57 @@ local function ApplyGlass(frame, theme, opts)
             NumberSequenceKeypoint.new(1.0, 1.0),
         }),
         Rotation = 135,
-        Parent = sheen,
+        Parent = sheenBase,
     })
 
-    -- Bottom-edge shadow: subtle dark fade at the bottom.
-    -- Adds depth so the panel doesn't look like it's floating.
+    -- ── Animated light sweep ───────────────────────────────────
+    -- A narrow diagonal band that glides across the panel, then
+    -- pauses, then sweeps again. Animated by shifting UIGradient.Offset
+    -- from -1 to 1 on the X axis.
+    local sweep = Create("Frame", {
+        Name = "GlassSweep",
+        Size = UDim2.fromScale(1, 1),
+        BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+        BackgroundTransparency = 0.82,
+        BorderSizePixel = 0,
+        ZIndex = 0,
+        Parent = frame,
+    })
+    Corner(radius, sweep)
+    local sweepGradient = Create("UIGradient", {
+        Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0.00, 1.0),
+            NumberSequenceKeypoint.new(0.42, 1.0),
+            NumberSequenceKeypoint.new(0.50, 0.0),  -- bright band peak
+            NumberSequenceKeypoint.new(0.58, 1.0),
+            NumberSequenceKeypoint.new(1.00, 1.0),
+        }),
+        Rotation = 135,
+        Offset = Vector2.new(-1, 0),
+        Parent = sweep,
+    })
+
+    if animated then
+        task.spawn(function()
+            while sweep and sweep.Parent do
+                sweepGradient.Offset = Vector2.new(-1, 0)
+                local ok = pcall(function()
+                    TweenService:Create(
+                        sweepGradient,
+                        TweenInfo.new(2.8, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut),
+                        { Offset = Vector2.new(1, 0) }
+                    ):Play()
+                end)
+                if not ok then break end
+                task.wait(2.9)         -- sweep duration + small buffer
+                task.wait(sweepGap)    -- pause between sweeps
+            end
+        end)
+    end
+
+    -- ── Bottom-edge shade ──────────────────────────────────────
+    -- Subtle dark fade at the bottom. Bottom corners rounded to
+    -- match parent, top corners square (it fades before reaching them).
     local bottomShade = Create("Frame", {
         Name = "GlassBottomShade",
         Size = UDim2.fromScale(1, 0.35),
@@ -143,6 +213,7 @@ local function ApplyGlass(frame, theme, opts)
         ZIndex = 0,
         Parent = frame,
     })
+    PartialCorner(bottomShade, 0, 0, radius, radius)
     Create("UIGradient", {
         Transparency = NumberSequence.new({
             NumberSequenceKeypoint.new(0.0, 1.0),
