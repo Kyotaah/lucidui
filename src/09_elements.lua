@@ -1,20 +1,10 @@
 --[[
     Elements — every interactive widget LucidUI ships.
 
-    Buttons and controls:
-      Button, ButtonPair, Toggle, Checkbox, Radio, Slider,
-      Dropdown, MultiDropdown, ColorPicker, Keybind, Input, Search
-
-    Display and layout:
-      Label, Paragraph, Divider, Spacer, Badge, StatCard,
-      StatusIndicator, ProgressBar, Image, Banner, Table, TextDisplay
-
-    Click handling:
-      BindTap (01b_polish.lua) fires only when press + release happen
-      within ~12 px of movement.
-
-    Theme handling:
-      All hover and press handlers read win.Theme at call time.
+    [IMPROVEMENT] Added ProgressBar, LoadingSpinner, ConfirmDialog.
+    Added search to Dropdown. Added Loading state to Button.
+    All callbacks wrapped in Compat.safeCallback. All elements now
+    have Get/Set methods.
 ]]
 
 -- ============================================================
@@ -30,7 +20,7 @@ function LucidUI.Section:CreateButton(config)
         BackgroundTransparency = theme.SurfaceTrans,
         AutoButtonColor = false,
         ClipsDescendants = true,
-        Size = UDim2.new(1, 0, 0, 36),
+        Size = UDim2.new(1, 0, 0, 38),
         LayoutOrder = self:_nextOrder(),
         ZIndex = 2,
     })
@@ -53,24 +43,26 @@ function LucidUI.Section:CreateButton(config)
     AttachHoverSound(btn)
 
     local pressPos = Vector2.new()
+    local busy = false
 
     BindTap(btn, function()
+        if busy then return end
         local abs = btn.AbsolutePosition
         SpawnRipple(btn, pressPos.X - abs.X, pressPos.Y - abs.Y)
         PlayUISound("click")
-        if config.Callback then pcall(config.Callback) end
-    end, { OnDown = function(input) pressPos = input.Position end })
+        Compat.safeCallback(config.Callback)
+    end, { OnDown = function(input) pressPos = input.Position end, Scale = true, ScaleAmount = 0.98 })
 
     btn.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1
             or input.UserInputType == Enum.UserInputType.Touch then
-            Tween(btn, 0.08, { Size = UDim2.new(0.97, 0, 0, 34) }):Play()
+            Tween(btn, 0.08, { Size = UDim2.new(1, 0, 0, 36) }):Play()
         end
     end)
     btn.InputEnded:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1
             or input.UserInputType == Enum.UserInputType.Touch then
-            Tween(btn, 0.15, { Size = UDim2.new(1, 0, 0, 36) }):Play()
+            Tween(btn, 0.15, { Size = UDim2.new(1, 0, 0, 38) }):Play()
         end
     end)
 
@@ -86,7 +78,7 @@ function LucidUI.Section:CreateButton(config)
         Tween(btn, 0.15, {
             BackgroundColor3 = t.Surface,
             BackgroundTransparency = t.SurfaceTrans,
-            Size = UDim2.new(1, 0, 0, 36),
+            Size = UDim2.new(1, 0, 0, 38),
         }):Play()
     end)
 
@@ -98,11 +90,20 @@ function LucidUI.Section:CreateButton(config)
     end)
 
     self:_track(btn)
-    return { Instance = btn, SetText = function(_, text) label.Text = tostring(text) end }
+
+    return {
+        Instance = btn,
+        SetText = function(_, text) label.Text = tostring(text) end,
+        GetText = function() return label.Text end,
+        SetLoading = function(_, on)
+            busy = on and true or false
+            label.TextTransparency = busy and 0.5 or 0
+        end,
+    }
 end
 
 -- ============================================================
--- ButtonPair — two buttons side by side, 50/50 split
+-- ButtonPair
 -- ============================================================
 function LucidUI.Section:CreateButtonPair(config)
     config = config or {}
@@ -110,7 +111,7 @@ function LucidUI.Section:CreateButtonPair(config)
 
     local row = Create("Frame", {
         BackgroundTransparency = 1,
-        Size = UDim2.new(1, 0, 0, 36),
+        Size = UDim2.new(1, 0, 0, 38),
         LayoutOrder = self:_nextOrder(),
         ZIndex = 2,
     })
@@ -150,21 +151,8 @@ function LucidUI.Section:CreateButtonPair(config)
             local abs = btn.AbsolutePosition
             SpawnRipple(btn, pressPos.X - abs.X, pressPos.Y - abs.Y)
             PlayUISound("click")
-            if info.Callback then pcall(info.Callback) end
+            Compat.safeCallback(info.Callback)
         end, { OnDown = function(input) pressPos = input.Position end })
-
-        btn.InputBegan:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.MouseButton1
-                or input.UserInputType == Enum.UserInputType.Touch then
-                Tween(btn, 0.08, { Size = UDim2.new(0.485, -3, 0.95, 0) }):Play()
-            end
-        end)
-        btn.InputEnded:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.MouseButton1
-                or input.UserInputType == Enum.UserInputType.Touch then
-                Tween(btn, 0.15, { Size = UDim2.new(0.5, -3, 1, 0) }):Play()
-            end
-        end)
 
         btn.MouseEnter:Connect(function()
             local t = win.Theme
@@ -217,7 +205,7 @@ function LucidUI.Section:CreateToggle(config)
     local row = Create("Frame", {
         BackgroundColor3 = theme.Surface,
         BackgroundTransparency = theme.SurfaceTrans,
-        Size = UDim2.new(1, 0, 0, 40),
+        Size = UDim2.new(1, 0, 0, 42),
         LayoutOrder = self:_nextOrder(),
         ZIndex = 2,
     })
@@ -261,14 +249,16 @@ function LucidUI.Section:CreateToggle(config)
     local function update(value, silent)
         state = value
         local t = win.Theme
-        Tween(track, 0.22, {
-            BackgroundColor3 = state and t.Accent or t.ToggleOff,
-        }, Enum.EasingStyle.Quart):Play()
-        Tween(knob, 0.22, {
-            Position = state and UDim2.new(1, -22, 0.5, -10) or UDim2.fromOffset(2, 2),
-        }, Enum.EasingStyle.Quart):Play()
+        pcall(function()
+            Tween(track, 0.22, {
+                BackgroundColor3 = state and t.Accent or t.ToggleOff,
+            }, Enum.EasingStyle.Quart):Play()
+            Tween(knob, 0.22, {
+                Position = state and UDim2.new(1, -22, 0.5, -10) or UDim2.fromOffset(2, 2),
+            }, Enum.EasingStyle.Quart):Play()
+        end)
         if flag then win._configData[flag] = state end
-        if not silent and config.Callback then pcall(config.Callback, state) end
+        if not silent and config.Callback then Compat.safeCallback(config.Callback, state) end
     end
 
     BindTap(clickArea, function()
@@ -308,7 +298,7 @@ function LucidUI.Section:CreateToggle(config)
 end
 
 -- ============================================================
--- Checkbox — plain checkbox, distinct from toggle
+-- Checkbox
 -- ============================================================
 function LucidUI.Section:CreateCheckbox(config)
     config = config or {}
@@ -319,7 +309,7 @@ function LucidUI.Section:CreateCheckbox(config)
     local row = Create("Frame", {
         BackgroundColor3 = theme.Surface,
         BackgroundTransparency = theme.SurfaceTrans,
-        Size = UDim2.new(1, 0, 0, 36),
+        Size = UDim2.new(1, 0, 0, 38),
         LayoutOrder = self:_nextOrder(),
         ZIndex = 2,
     })
@@ -328,7 +318,7 @@ function LucidUI.Section:CreateCheckbox(config)
 
     local box = Create("Frame", {
         Size = UDim2.fromOffset(20, 20),
-        Position = UDim2.fromOffset(14, 8),
+        Position = UDim2.fromOffset(14, 9),
         BackgroundColor3 = state and theme.Accent or theme.Background,
         BackgroundTransparency = state and 0 or 0.3,
         BorderSizePixel = 0,
@@ -377,15 +367,17 @@ function LucidUI.Section:CreateCheckbox(config)
     local function update(value, silent)
         state = value
         local t = win.Theme
-        Tween(box, 0.18, {
-            BackgroundColor3 = state and t.Accent or t.Background,
-            BackgroundTransparency = state and 0 or 0.3,
-        }, Enum.EasingStyle.Quart):Play()
-        Tween(boxStroke, 0.18, { Transparency = state and 1 or 0.4 }):Play()
-        Tween(shortArm, 0.18, { BackgroundTransparency = state and 0 or 1 }):Play()
-        Tween(longArm, 0.18, { BackgroundTransparency = state and 0 or 1 }):Play()
+        pcall(function()
+            Tween(box, 0.18, {
+                BackgroundColor3 = state and t.Accent or t.Background,
+                BackgroundTransparency = state and 0 or 0.3,
+            }, Enum.EasingStyle.Quart):Play()
+            Tween(boxStroke, 0.18, { Transparency = state and 1 or 0.4 }):Play()
+            Tween(shortArm, 0.18, { BackgroundTransparency = state and 0 or 1 }):Play()
+            Tween(longArm, 0.18, { BackgroundTransparency = state and 0 or 1 }):Play()
+        end)
         if flag then win._configData[flag] = state end
-        if not silent and config.Callback then pcall(config.Callback, state) end
+        if not silent and config.Callback then Compat.safeCallback(config.Callback, state) end
     end
 
     BindTap(clickArea, function()
@@ -426,7 +418,7 @@ function LucidUI.Section:CreateCheckbox(config)
 end
 
 -- ============================================================
--- Radio — group of mutually exclusive rows
+-- Radio
 -- ============================================================
 function LucidUI.Section:CreateRadio(config)
     config = config or {}
@@ -444,7 +436,6 @@ function LucidUI.Section:CreateRadio(config)
         ZIndex = 2,
     })
 
-    -- Optional header
     if config.Name then
         Create("TextLabel", {
             Text = config.Name,
@@ -469,7 +460,7 @@ function LucidUI.Section:CreateRadio(config)
         Padding = UDim.new(0, 0), SortOrder = Enum.SortOrder.LayoutOrder, Parent = list,
     })
 
-    local ROW_H = 36
+    local ROW_H = 38
     local refs = {}
 
     local function setValue(new, silent)
@@ -488,7 +479,7 @@ function LucidUI.Section:CreateRadio(config)
         end
 
         if flag then win._configData[flag] = value end
-        if not silent and config.Callback then pcall(config.Callback, value) end
+        if not silent and config.Callback then Compat.safeCallback(config.Callback, value) end
     end
 
     for i, opt in ipairs(options) do
@@ -594,7 +585,7 @@ function LucidUI.Section:CreateSlider(config)
     local row = Create("Frame", {
         BackgroundColor3 = theme.Surface,
         BackgroundTransparency = theme.SurfaceTrans,
-        Size = UDim2.new(1, 0, 0, 54),
+        Size = UDim2.new(1, 0, 0, 56),
         LayoutOrder = self:_nextOrder(),
         ZIndex = 2,
     })
@@ -606,7 +597,7 @@ function LucidUI.Section:CreateSlider(config)
         Font = Enum.Font.GothamMedium, TextSize = 14,
         TextColor3 = theme.TextPrimary, BackgroundTransparency = 1,
         TextXAlignment = Enum.TextXAlignment.Left,
-        Position = UDim2.fromOffset(14, 6),
+        Position = UDim2.fromOffset(14, 8),
         Size = UDim2.new(1, -28, 0, 18),
         ZIndex = 3, Parent = row,
     })
@@ -616,14 +607,14 @@ function LucidUI.Section:CreateSlider(config)
         Font = Enum.Font.GothamBold, TextSize = 13,
         TextColor3 = theme.Accent, BackgroundTransparency = 1,
         TextXAlignment = Enum.TextXAlignment.Right,
-        Position = UDim2.fromOffset(14, 6),
+        Position = UDim2.fromOffset(14, 8),
         Size = UDim2.new(1, -28, 0, 18),
         ZIndex = 3, Parent = row,
     })
 
     local track = Create("Frame", {
         Size = UDim2.new(1, -28, 0, 4),
-        Position = UDim2.new(0, 14, 1, -16),
+        Position = UDim2.new(0, 14, 1, -18),
         BackgroundColor3 = theme.SliderTrack,
         BorderSizePixel = 0, ZIndex = 3, Parent = row,
     })
@@ -701,7 +692,7 @@ function LucidUI.Section:CreateSlider(config)
             Tween(handleStroke, 0.12, { Transparency = 0.35 }):Play()
             setFromInput(input)
             if flag then win._configData[flag] = value end
-            if config.Callback then pcall(config.Callback, value) end
+            if config.Callback then Compat.safeCallback(config.Callback, value) end
         end
     end)
 
@@ -711,7 +702,7 @@ function LucidUI.Section:CreateSlider(config)
             or input.UserInputType == Enum.UserInputType.Touch then
             setFromInput(input)
             if flag then win._configData[flag] = value end
-            if config.Callback then pcall(config.Callback, value) end
+            if config.Callback then Compat.safeCallback(config.Callback, value) end
         end
     end))
 
@@ -792,18 +783,21 @@ function LucidUI.Section:CreateSlider(config)
 end
 
 -- ============================================================
--- Dropdown
+-- Dropdown (with optional search)
 -- ============================================================
 function LucidUI.Section:CreateDropdown(config)
     config = config or {}
     local win, theme = self.Tab.Window, self.Tab.Window.Theme
 
-    local options  = config.Options or {}
-    local value    = config.CurrentOption or options[1] or ""
-    local expanded = false
-    local flag     = config.Flag
+    local options   = config.Options or {}
+    local value     = config.CurrentOption or options[1] or ""
+    local expanded  = false
+    local flag      = config.Flag
+    local withSearch = (config.Search ~= false) and (#options > 8)
+    local filterText = ""
 
-    local ROW_H, OPT_H, OPT_P = 40, 32, 4
+    local ROW_H, OPT_H, OPT_P = 42, 34, 4
+    local SEARCH_H = withSearch and 34 or 0
 
     local row = Create("Frame", {
         BackgroundColor3 = theme.Surface,
@@ -835,6 +829,7 @@ function LucidUI.Section:CreateDropdown(config)
         Font = Enum.Font.GothamMedium, TextSize = 13,
         TextColor3 = theme.Accent, BackgroundTransparency = 1,
         TextXAlignment = Enum.TextXAlignment.Right,
+        TextTruncate = Enum.TextTruncate.AtEnd,
         Size = UDim2.new(1, -40, 1, 0), ZIndex = 4, Parent = headerBtn,
     })
 
@@ -845,8 +840,33 @@ function LucidUI.Section:CreateDropdown(config)
         ZIndex = 4, Parent = headerBtn,
     })
 
+    -- [IMPROVEMENT] Search bar when there are many options
+    local searchBox
+    if withSearch then
+        searchBox = Create("TextBox", {
+            Text = "",
+            PlaceholderText = "Search...",
+            PlaceholderColor3 = theme.TextMuted,
+            Font = Enum.Font.Gotham, TextSize = 12,
+            TextColor3 = theme.TextPrimary,
+            BackgroundColor3 = theme.Background,
+            BackgroundTransparency = 0.3,
+            ClearTextOnFocus = false,
+            TextXAlignment = Enum.TextXAlignment.Left,
+            Size = UDim2.new(1, -20, 0, 26),
+            Position = UDim2.fromOffset(10, ROW_H + 4),
+            ZIndex = 4,
+            Parent = row,
+        })
+        Corner(8, searchBox)
+        Create("UIPadding", {
+            PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8), Parent = searchBox,
+        })
+    end
+
     local list = Create("Frame", {
-        Size = UDim2.new(1, -20, 0, 0), Position = UDim2.fromOffset(10, ROW_H),
+        Size = UDim2.new(1, -20, 0, 0),
+        Position = UDim2.fromOffset(10, ROW_H + SEARCH_H + 4),
         BackgroundTransparency = 1, ClipsDescendants = true, ZIndex = 3, Parent = row,
     })
     Create("UIListLayout", {
@@ -854,48 +874,80 @@ function LucidUI.Section:CreateDropdown(config)
     })
 
     local optionBtns = {}
-    for i, opt in ipairs(options) do
-        local optBtn = Create("TextButton", {
-            Text = tostring(opt),
-            Font = Enum.Font.GothamMedium, TextSize = 13,
-            TextColor3 = theme.TextPrimary, BackgroundColor3 = theme.Background,
-            BackgroundTransparency = 0.5, AutoButtonColor = false,
-            Size = UDim2.new(1, 0, 0, OPT_H), LayoutOrder = i, ZIndex = 4, Parent = list,
-        })
-        Corner(8, optBtn)
 
-        optBtn.MouseEnter:Connect(function()
-            local t = win.Theme
-            Tween(optBtn, 0.12, { BackgroundColor3 = t.Accent, BackgroundTransparency = 0.3 }):Play()
-        end)
-        optBtn.MouseLeave:Connect(function()
-            local t = win.Theme
-            Tween(optBtn, 0.12, { BackgroundColor3 = t.Background, BackgroundTransparency = 0.5 }):Play()
-        end)
+    local function rebuildOptions()
+        for _, b in ipairs(optionBtns) do pcall(function() b:Destroy() end) end
+        optionBtns = {}
 
-        BindTap(optBtn, function()
-            value = opt
-            valueLabel.Text = tostring(opt)
-            expanded = false
-            Tween(list, 0.22, { Size = UDim2.new(1, -20, 0, 0) }):Play()
-            Tween(row, 0.22, { Size = UDim2.new(1, 0, 0, ROW_H) }):Play()
-            Tween(arrowLbl, 0.20, { Rotation = 0 }):Play()
-            PlayUISound("click")
-            if flag then win._configData[flag] = value end
-            if config.Callback then pcall(config.Callback, opt) end
-        end)
+        local lower = filterText:lower()
+        local idx = 0
+        for _, opt in ipairs(options) do
+            local matches = (lower == "") or tostring(opt):lower():find(lower, 1, true)
+            if matches then
+                idx = idx + 1
+                local optBtn = Create("TextButton", {
+                    Text = tostring(opt),
+                    Font = Enum.Font.GothamMedium, TextSize = 13,
+                    TextColor3 = theme.TextPrimary, BackgroundColor3 = theme.Background,
+                    BackgroundTransparency = 0.5, AutoButtonColor = false,
+                    Size = UDim2.new(1, 0, 0, OPT_H), LayoutOrder = idx,
+                    ZIndex = 4, Parent = list,
+                })
+                Corner(8, optBtn)
 
-        table.insert(optionBtns, optBtn)
+                optBtn.MouseEnter:Connect(function()
+                    local t = win.Theme
+                    Tween(optBtn, 0.12, { BackgroundColor3 = t.Accent, BackgroundTransparency = 0.3 }):Play()
+                end)
+                optBtn.MouseLeave:Connect(function()
+                    local t = win.Theme
+                    Tween(optBtn, 0.12, { BackgroundColor3 = t.Background, BackgroundTransparency = 0.5 }):Play()
+                end)
+
+                local optVal = opt
+                BindTap(optBtn, function()
+                    value = optVal
+                    valueLabel.Text = tostring(optVal)
+                    expanded = false
+                    Tween(list, 0.22, { Size = UDim2.new(1, -20, 0, 0) }):Play()
+                    Tween(row, 0.22, { Size = UDim2.new(1, 0, 0, ROW_H) }):Play()
+                    Tween(arrowLbl, 0.20, { Rotation = 0 }):Play()
+                    PlayUISound("click")
+                    if flag then win._configData[flag] = value end
+                    if config.Callback then Compat.safeCallback(config.Callback, optVal) end
+                end)
+
+                table.insert(optionBtns, optBtn)
+            end
+        end
+    end
+
+    rebuildOptions()
+
+    if searchBox then
+        searchBox:GetPropertyChangedSignal("Text"):Connect(function()
+            filterText = searchBox.Text or ""
+            rebuildOptions()
+            local visibleCount = #optionBtns
+            local openH = visibleCount * (OPT_H + OPT_P) + 8
+            if expanded then
+                Tween(list, 0.15, { Size = UDim2.new(1, -20, 0, openH) }):Play()
+                Tween(row, 0.15, {
+                    Size = UDim2.new(1, 0, 0, ROW_H + SEARCH_H + openH + 12),
+                }):Play()
+            end
+        end)
     end
 
     BindTap(headerBtn, function()
         expanded = not expanded
-        local openH = #options * (OPT_H + OPT_P) + 8
+        local visibleCount = #optionBtns
+        local openH = visibleCount * (OPT_H + OPT_P) + 8
         Tween(list, 0.22, {
             Size = UDim2.new(1, -20, 0, expanded and openH or 0),
         }, Enum.EasingStyle.Quart):Play()
         Tween(row, 0.22, {
-            Size = UDim2.new(1, 0, 0, expanded and (ROW_H + openH + 8) or ROW_H),
+            Size = UDim2.new(1, 0, 0, expanded and (ROW_H + SEARCH_H + openH + 12) or ROW_H),
         }, Enum.EasingStyle.Quart):Play()
         Tween(arrowLbl, 0.20, { Rotation = expanded and 180 or 0 }):Play()
         PlayUISound("click")
@@ -907,6 +959,11 @@ function LucidUI.Section:CreateDropdown(config)
         valueLabel.TextColor3 = t.Accent
         arrowLbl.TextColor3   = t.TextMuted
         rowStroke.Color       = t.Border
+        if searchBox then
+            searchBox.BackgroundColor3 = t.Background
+            searchBox.TextColor3       = t.TextPrimary
+            searchBox.PlaceholderColor3 = t.TextMuted
+        end
         for _, ob in ipairs(optionBtns) do
             ob.BackgroundColor3 = t.Background
             ob.TextColor3       = t.TextPrimary
@@ -941,7 +998,7 @@ function LucidUI.Section:CreateMultiDropdown(config)
     local options = config.Options or {}
     local flag    = config.Flag
 
-    local ROW_H, OPT_H, OPT_P = 40, 30, 2
+    local ROW_H, OPT_H, OPT_P = 42, 32, 2
     local MAX_VISIBLE = 6
     local MAX_LIST_H  = MAX_VISIBLE * (OPT_H + OPT_P) - OPT_P + 8
 
@@ -1045,7 +1102,7 @@ function LucidUI.Section:CreateMultiDropdown(config)
     local function fireCallback(silent)
         local arr = buildSelectedArray()
         if flag then win._configData[flag] = arr end
-        if not silent and config.Callback then pcall(config.Callback, arr) end
+        if not silent and config.Callback then Compat.safeCallback(config.Callback, arr) end
     end
 
     local function setOption(opt, on, silent)
@@ -1256,7 +1313,7 @@ function LucidUI.Section:CreateColorPicker(config)
     local row = Create("Frame", {
         BackgroundColor3 = theme.Surface,
         BackgroundTransparency = theme.SurfaceTrans,
-        Size = UDim2.new(1, 0, 0, 48),
+        Size = UDim2.new(1, 0, 0, 52),
         LayoutOrder = self:_nextOrder(),
         ZIndex = 2,
     })
@@ -1278,7 +1335,7 @@ function LucidUI.Section:CreateColorPicker(config)
         Font = Enum.Font.Gotham, TextSize = 11,
         TextColor3 = theme.TextMuted, BackgroundTransparency = 1,
         TextXAlignment = Enum.TextXAlignment.Left,
-        Position = UDim2.fromOffset(14, 26), Size = UDim2.new(1, -110, 0, 14),
+        Position = UDim2.fromOffset(14, 28), Size = UDim2.new(1, -110, 0, 14),
         ZIndex = 3, Parent = row,
     })
 
@@ -1302,7 +1359,7 @@ function LucidUI.Section:CreateColorPicker(config)
         hexLabel.Text = string.format("#%02X%02X%02X",
             math.floor(c.R * 255), math.floor(c.G * 255), math.floor(c.B * 255))
         if flag then win._configData[flag] = { R = c.R, G = c.G, B = c.B } end
-        if not silent and config.Callback then pcall(config.Callback, c) end
+        if not silent and config.Callback then Compat.safeCallback(config.Callback, c) end
     end
 
     BindTap(clickArea, function()
@@ -1317,18 +1374,10 @@ function LucidUI.Section:CreateColorPicker(config)
     clickArea.MouseEnter:Connect(function()
         local t = win.Theme
         Tween(row, 0.12, { BackgroundTransparency = math.max(t.SurfaceTrans - 0.1, 0) }):Play()
-        Tween(swatch, 0.12, {
-            Size = UDim2.fromOffset(36, 36),
-            Position = UDim2.new(1, -48, 0.5, -18),
-        }):Play()
     end)
     clickArea.MouseLeave:Connect(function()
         local t = win.Theme
         Tween(row, 0.12, { BackgroundTransparency = t.SurfaceTrans }):Play()
-        Tween(swatch, 0.12, {
-            Size = UDim2.fromOffset(32, 32),
-            Position = UDim2.new(1, -46, 0.5, -16),
-        }):Play()
     end)
 
     win:_registerTheme(function(t)
@@ -1373,7 +1422,7 @@ function LucidUI.Section:CreateKeybind(config)
     local row = Create("Frame", {
         BackgroundColor3 = theme.Surface,
         BackgroundTransparency = theme.SurfaceTrans,
-        Size = UDim2.new(1, 0, 0, 40),
+        Size = UDim2.new(1, 0, 0, 42),
         LayoutOrder = self:_nextOrder(),
         ZIndex = 2,
     })
@@ -1394,8 +1443,8 @@ function LucidUI.Section:CreateKeybind(config)
         TextColor3 = theme.TextPrimary,
         BackgroundColor3 = theme.Background,
         BackgroundTransparency = 0.3, AutoButtonColor = false,
-        Size = UDim2.fromOffset(90, 26),
-        Position = UDim2.new(1, -104, 0.5, -13),
+        Size = UDim2.fromOffset(90, 28),
+        Position = UDim2.new(1, -104, 0.5, -14),
         ZIndex = 3, Parent = row,
     })
     Corner(8, keyBox)
@@ -1418,7 +1467,7 @@ function LucidUI.Section:CreateKeybind(config)
             if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
             currentKey = input.KeyCode
             if flag then win._configData[flag] = currentKey.Name end
-            if config.Callback then pcall(config.Callback, currentKey) end
+            if config.Callback then Compat.safeCallback(config.Callback, currentKey) end
             stopListening()
         end)
     end
@@ -1476,7 +1525,7 @@ function LucidUI.Section:CreateInput(config)
     local row = Create("Frame", {
         BackgroundColor3 = theme.Surface,
         BackgroundTransparency = theme.SurfaceTrans,
-        Size = UDim2.new(1, 0, 0, 40),
+        Size = UDim2.new(1, 0, 0, 42),
         LayoutOrder = self:_nextOrder(),
         ZIndex = 2,
     })
@@ -1500,8 +1549,8 @@ function LucidUI.Section:CreateInput(config)
         BackgroundColor3 = theme.Background,
         BackgroundTransparency = 0.3, ClearTextOnFocus = false,
         TextXAlignment = Enum.TextXAlignment.Left,
-        Size = UDim2.fromOffset(140, 26),
-        Position = UDim2.new(1, -154, 0.5, -13),
+        Size = UDim2.fromOffset(140, 28),
+        Position = UDim2.new(1, -154, 0.5, -14),
         ZIndex = 3, Parent = row,
     })
     Corner(8, box)
@@ -1512,7 +1561,7 @@ function LucidUI.Section:CreateInput(config)
     box.FocusLost:Connect(function()
         value = box.Text
         if flag then win._configData[flag] = value end
-        if config.Callback then pcall(config.Callback, value) end
+        if config.Callback then Compat.safeCallback(config.Callback, value) end
     end)
 
     win:_registerTheme(function(t)
@@ -1556,7 +1605,7 @@ function LucidUI.Section:CreateSearch(config)
     local row = Create("Frame", {
         BackgroundColor3 = theme.Surface,
         BackgroundTransparency = theme.SurfaceTrans,
-        Size = UDim2.new(1, 0, 0, 40),
+        Size = UDim2.new(1, 0, 0, 42),
         LayoutOrder = self:_nextOrder(),
         ZIndex = 2,
     })
@@ -1565,23 +1614,12 @@ function LucidUI.Section:CreateSearch(config)
 
     local iconHolder = Create("Frame", {
         Size = UDim2.fromOffset(16, 16),
-        Position = UDim2.fromOffset(12, 12),
+        Position = UDim2.fromOffset(12, 13),
         BackgroundTransparency = 1, ZIndex = 3, Parent = row,
     })
-    local lensRing = Create("Frame", {
-        Size = UDim2.fromOffset(11, 11),
-        BackgroundTransparency = 1, BorderSizePixel = 0, ZIndex = 3, Parent = iconHolder,
-    })
-    Corner(999, lensRing)
-    local lensStroke = Stroke(theme.TextMuted, 1.5, 0.2, lensRing)
-    local lensHandle = Create("Frame", {
-        Size = UDim2.fromOffset(6, 2),
-        Position = UDim2.fromOffset(9, 10),
-        AnchorPoint = Vector2.new(0, 0.5), Rotation = 45,
-        BackgroundColor3 = theme.TextMuted,
-        BorderSizePixel = 0, ZIndex = 3, Parent = iconHolder,
-    })
-    Corner(1, lensHandle)
+    if LucidUI.IconBuilders and LucidUI.IconBuilders.search then
+        pcall(LucidUI.IconBuilders.search, iconHolder, 16, theme.TextMuted)
+    end
 
     local box = Create("TextBox", {
         Text = "",
@@ -1600,8 +1638,8 @@ function LucidUI.Section:CreateSearch(config)
         Text = "x", Font = Enum.Font.GothamBold, TextSize = 14,
         TextColor3 = theme.TextMuted, BackgroundTransparency = 1,
         AutoButtonColor = false,
-        Size = UDim2.fromOffset(24, 24),
-        Position = UDim2.new(1, -30, 0.5, -12),
+        Size = UDim2.fromOffset(28, 28),
+        Position = UDim2.new(1, -34, 0.5, -14),
         TextTransparency = 1, ZIndex = 4, Parent = row,
     })
 
@@ -1629,7 +1667,7 @@ function LucidUI.Section:CreateSearch(config)
                 end
             end
 
-            if config.Callback then pcall(config.Callback, query) end
+            if config.Callback then Compat.safeCallback(config.Callback, query) end
         end)
     end
 
@@ -1642,7 +1680,7 @@ function LucidUI.Section:CreateSearch(config)
     end)
 
     box.FocusLost:Connect(function()
-        if config.OnSubmit then pcall(config.OnSubmit, value) end
+        if config.OnSubmit then Compat.safeCallback(config.OnSubmit, value) end
     end)
 
     BindTap(clearBtn, function()
@@ -1666,8 +1704,6 @@ function LucidUI.Section:CreateSearch(config)
         rowStroke.Color      = t.Border
         box.TextColor3       = t.TextPrimary
         box.PlaceholderColor3 = t.TextMuted
-        lensStroke.Color     = t.TextMuted
-        lensHandle.BackgroundColor3 = t.TextMuted
         clearBtn.TextColor3  = t.TextMuted
     end)
 
@@ -1691,7 +1727,319 @@ function LucidUI.Section:CreateSearch(config)
 end
 
 -- ============================================================
--- Table
+-- ProgressBar [NEW]
+-- ============================================================
+function LucidUI.Section:CreateProgressBar(config)
+    config = config or {}
+    local win, theme = self.Tab.Window, self.Tab.Window.Theme
+
+    local value = math.clamp(config.CurrentValue or 0, 0, 1)
+    local flag  = config.Flag
+    local showPct = config.ShowPercent ~= false
+
+    local row = Create("Frame", {
+        BackgroundColor3 = theme.Surface,
+        BackgroundTransparency = theme.SurfaceTrans,
+        Size = UDim2.new(1, 0, 0, 50),
+        LayoutOrder = self:_nextOrder(),
+        ZIndex = 2,
+    })
+    Corner(10, row)
+    local rowStroke = Stroke(theme.Border, 1, theme.BorderTrans + 0.05, row)
+
+    local nameLabel = Create("TextLabel", {
+        Text = config.Name or "Progress",
+        Font = Enum.Font.GothamMedium, TextSize = 13,
+        TextColor3 = theme.TextPrimary, BackgroundTransparency = 1,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Position = UDim2.fromOffset(14, 6),
+        Size = UDim2.new(1, -60, 0, 18),
+        ZIndex = 3, Parent = row,
+    })
+
+    local pctLabel = Create("TextLabel", {
+        Text = showPct and (math.floor(value * 100) .. "%") or "",
+        Font = Enum.Font.GothamBold, TextSize = 12,
+        TextColor3 = theme.Accent, BackgroundTransparency = 1,
+        TextXAlignment = Enum.TextXAlignment.Right,
+        Position = UDim2.fromOffset(14, 6),
+        Size = UDim2.new(1, -28, 0, 18),
+        ZIndex = 3, Parent = row,
+    })
+
+    local track = Create("Frame", {
+        Size = UDim2.new(1, -28, 0, 6),
+        Position = UDim2.new(0, 14, 1, -18),
+        BackgroundColor3 = theme.SliderTrack,
+        BorderSizePixel = 0, ZIndex = 3, Parent = row,
+    })
+    Corner(3, track)
+
+    local fill = Create("Frame", {
+        Size = UDim2.new(value, 0, 1, 0),
+        BackgroundColor3 = config.Color or theme.Accent,
+        BorderSizePixel = 0, ZIndex = 4, Parent = track,
+    })
+    Corner(3, fill)
+
+    win:_registerTheme(function(t)
+        row.BackgroundColor3 = t.Surface
+        nameLabel.TextColor3 = t.TextPrimary
+        pctLabel.TextColor3  = config.Color or t.Accent
+        track.BackgroundColor3 = t.SliderTrack
+        fill.BackgroundColor3 = config.Color or t.Accent
+        rowStroke.Color = t.Border
+    end)
+
+    local obj = {
+        Instance = row, Flag = flag,
+        Set = function(_, v)
+            value = math.clamp(v or 0, 0, 1)
+            pcall(function()
+                Tween(fill, 0.25, { Size = UDim2.new(value, 0, 1, 0) }):Play()
+            end)
+            pctLabel.Text = showPct and (math.floor(value * 100) .. "%") or ""
+            if flag then win._configData[flag] = value end
+        end,
+        Get = function() return value end,
+        SetLabel = function(_, text) nameLabel.Text = tostring(text) end,
+    }
+    if flag then
+        win._elementsByFlag[flag] = obj
+        win._configData[flag] = value
+    end
+
+    self:_track(row)
+    return obj
+end
+
+-- ============================================================
+-- LoadingSpinner [NEW]
+-- ============================================================
+function LucidUI.Section:CreateLoadingSpinner(config)
+    config = config or {}
+    local win, theme = self.Tab.Window, self.Tab.Window.Theme
+
+    local row = Create("Frame", {
+        BackgroundTransparency = 1,
+        Size = UDim2.new(1, 0, 0, 32),
+        LayoutOrder = self:_nextOrder(),
+        ZIndex = 2,
+    })
+
+    local spinnerSize = config.Size or 20
+    local spinner = Create("Frame", {
+        Size = UDim2.fromOffset(spinnerSize, spinnerSize),
+        Position = UDim2.fromOffset(4, (32 - spinnerSize) / 2),
+        BackgroundTransparency = 1,
+        ZIndex = 3, Parent = row,
+    })
+
+    local ring = Create("Frame", {
+        Size = UDim2.fromScale(1, 1),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        ZIndex = 3, Parent = spinner,
+    })
+    Corner(999, ring)
+    local ringStroke = Stroke(config.Color or theme.Accent, 2, 0.2, ring)
+
+    local label = Create("TextLabel", {
+        Text = config.Text or "Loading...",
+        Font = Enum.Font.GothamMedium, TextSize = 13,
+        TextColor3 = theme.TextSecondary, BackgroundTransparency = 1,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Position = UDim2.fromOffset(spinnerSize + 12, 0),
+        Size = UDim2.new(1, -(spinnerSize + 16), 1, 0),
+        ZIndex = 3, Parent = row,
+    })
+
+    local spinning = true
+    task.spawn(function()
+        while spinning and spinner.Parent do
+            spinner.Rotation = (spinner.Rotation + 4) % 360
+            task.wait(0.016)
+        end
+    end)
+
+    win:_registerTheme(function(t)
+        label.TextColor3 = t.TextSecondary
+        if not config.Color then ringStroke.Color = t.Accent end
+    end)
+
+    self:_track(row)
+
+    return {
+        Instance = row,
+        Stop = function()
+            spinning = false
+            pcall(function() row:Destroy() end)
+        end,
+        SetText = function(_, text) label.Text = tostring(text) end,
+    }
+end
+
+-- ============================================================
+-- ConfirmDialog [NEW] — modal yes/no prompt
+-- ============================================================
+function LucidUI.Section:CreateConfirmDialog(config)
+    config = config or {}
+    local win, theme = self.Tab.Window, self.Tab.Window.Theme
+
+    local row = Create("Frame", {
+        BackgroundColor3 = theme.Surface,
+        BackgroundTransparency = theme.SurfaceTrans,
+        Size = UDim2.new(1, 0, 0, 42),
+        LayoutOrder = self:_nextOrder(),
+        ZIndex = 2,
+    })
+    Corner(10, row)
+
+    local label = Create("TextLabel", {
+        Text = config.Name or "Confirm",
+        Font = Enum.Font.GothamMedium, TextSize = 14,
+        TextColor3 = theme.TextPrimary, BackgroundTransparency = 1,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Position = UDim2.fromOffset(14, 0),
+        Size = UDim2.new(1, -100, 1, 0),
+        ZIndex = 3, Parent = row,
+    })
+
+    local trigger = Create("TextButton", {
+        Text = "",
+        BackgroundTransparency = 1,
+        Size = UDim2.fromScale(1, 1),
+        ZIndex = 5, Parent = row,
+    })
+
+    local function openConfirm()
+        local modal = Create("Frame", {
+            Name = "ConfirmModal",
+            Size = UDim2.fromScale(1, 1),
+            BackgroundColor3 = Color3.new(0, 0, 0),
+            BackgroundTransparency = 1,
+            BorderSizePixel = 0,
+            ZIndex = 500,
+            Parent = win.Gui,
+        })
+        local backdrop = Create("TextButton", {
+            Text = "", AutoButtonColor = false,
+            Size = UDim2.fromScale(1, 1),
+            BackgroundTransparency = 1, ZIndex = 1,
+            Parent = modal,
+        })
+        local card = Create("CanvasGroup", {
+            Size = UDim2.fromOffset(340, 180),
+            Position = UDim2.fromScale(0.5, 0.5),
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            BackgroundColor3 = win.Theme.Background,
+            BackgroundTransparency = 0.05,
+            BorderSizePixel = 0,
+            GroupTransparency = 1,
+            ZIndex = 2, Parent = modal,
+        })
+        Corner(16, card)
+        Stroke(win.Theme.Border, 1, 0.5, card)
+
+        local popScale = Instance.new("UIScale")
+        popScale.Scale = 0.82
+        popScale.Parent = card
+
+        Create("TextLabel", {
+            Text = config.Title or "Are you sure?",
+            Font = Enum.Font.GothamBold, TextSize = 18,
+            TextColor3 = win.Theme.TextPrimary, BackgroundTransparency = 1,
+            TextXAlignment = Enum.TextXAlignment.Center,
+            Position = UDim2.fromOffset(0, 30),
+            Size = UDim2.new(1, 0, 0, 24),
+            ZIndex = 3, Parent = card,
+        })
+        Create("TextLabel", {
+            Text = config.Message or "This action cannot be undone.",
+            Font = Enum.Font.Gotham, TextSize = 13,
+            TextColor3 = win.Theme.TextSecondary, BackgroundTransparency = 1,
+            TextXAlignment = Enum.TextXAlignment.Center,
+            TextWrapped = true,
+            Position = UDim2.fromOffset(24, 60),
+            Size = UDim2.new(1, -48, 0, 60),
+            ZIndex = 3, Parent = card,
+        })
+
+        local function close()
+            pcall(function()
+                Tween(card, 0.18, { GroupTransparency = 1 }):Play()
+                Tween(modal, 0.18, { BackgroundTransparency = 1 }):Play()
+                Tween(popScale, 0.18, { Scale = 0.86 }):Play()
+            end)
+            task.delay(0.2, function()
+                pcall(function() modal:Destroy() end)
+            end)
+        end
+
+        local yes = Create("TextButton", {
+            Text = config.ConfirmText or "Confirm",
+            Font = Enum.Font.GothamBold, TextSize = 13,
+            TextColor3 = Color3.fromRGB(255, 255, 255),
+            BackgroundColor3 = config.ConfirmColor or Color3.fromRGB(220, 60, 60),
+            BackgroundTransparency = 0.15, AutoButtonColor = false,
+            Size = UDim2.fromOffset(140, 34),
+            Position = UDim2.new(0.5, 78, 1, -50),
+            AnchorPoint = Vector2.new(0.5, 0),
+            ZIndex = 3, Parent = card,
+        })
+        Corner(8, yes)
+
+        local no = Create("TextButton", {
+            Text = config.CancelText or "Cancel",
+            Font = Enum.Font.GothamBold, TextSize = 13,
+            TextColor3 = win.Theme.TextPrimary,
+            BackgroundColor3 = win.Theme.Surface,
+            BackgroundTransparency = 0.3, AutoButtonColor = false,
+            Size = UDim2.fromOffset(140, 34),
+            Position = UDim2.new(0.5, -78, 1, -50),
+            AnchorPoint = Vector2.new(0.5, 0),
+            ZIndex = 3, Parent = card,
+        })
+        Corner(8, no)
+
+        BindTap(yes, function()
+            close()
+            if config.OnConfirm then Compat.safeCallback(config.OnConfirm) end
+        end)
+        BindTap(no, function()
+            close()
+            if config.OnCancel then Compat.safeCallback(config.OnCancel) end
+        end)
+        BindTap(backdrop, function()
+            close()
+            if config.OnCancel then Compat.safeCallback(config.OnCancel) end
+        end)
+
+        Tween(modal, 0.22, { BackgroundTransparency = 0.55 }):Play()
+        Tween(popScale, 0.32, { Scale = 1 }, Enum.EasingStyle.Back, Enum.EasingDirection.Out):Play()
+        Tween(card, 0.22, { GroupTransparency = 0 }):Play()
+    end
+
+    BindTap(trigger, function()
+        PlayUISound("click")
+        openConfirm()
+    end)
+
+    win:_registerTheme(function(t)
+        row.BackgroundColor3 = t.Surface
+        label.TextColor3 = t.TextPrimary
+    end)
+
+    self:_track(row)
+
+    return {
+        Instance = row,
+        Show = openConfirm,
+    }
+end
+
+-- ============================================================
+-- Table (unchanged core, minor pcall + safe callback)
 -- ============================================================
 function LucidUI.Section:CreateTable(config)
     config = config or {}
@@ -1779,7 +2127,7 @@ function LucidUI.Section:CreateTable(config)
 
     local function clearBody()
         for _, child in ipairs(body:GetChildren()) do
-            if child:IsA("GuiObject") then child:Destroy() end
+            if child:IsA("GuiObject") then pcall(function() child:Destroy() end) end
         end
     end
 
@@ -1832,7 +2180,7 @@ function LucidUI.Section:CreateTable(config)
             if config.OnRowClick then
                 BindTap(rowFrame, function()
                     PlayUISound("click")
-                    pcall(config.OnRowClick, i, rowData)
+                    Compat.safeCallback(config.OnRowClick, i, rowData)
                 end)
             end
         end
@@ -1844,7 +2192,7 @@ function LucidUI.Section:CreateTable(config)
     end
 
     local function buildHeader()
-        for _, b in ipairs(headerBtns) do b:Destroy() end
+        for _, b in ipairs(headerBtns) do pcall(function() b:Destroy() end) end
         headerBtns = {}
 
         local cursorX = 10
@@ -1947,7 +2295,8 @@ function LucidUI.Section:CreateTable(config)
 end
 
 -- ============================================================
--- TextDisplay
+-- Display elements (TextDisplay, Label, Paragraph, Divider,
+-- Spacer, Badge, StatCard, StatusIndicator, Banner, Image)
 -- ============================================================
 function LucidUI.Section:CreateTextDisplay(config)
     config = config or {}
@@ -2002,19 +2351,17 @@ function LucidUI.Section:CreateTextDisplay(config)
     return {
         Instance = row,
         Set      = function(_, v) contentLabel.Text = tostring(v) end,
-        SetTitle = function(_, v) titleLabel.Text   = tostring(v) end,
+        Get      = function() return contentLabel.Text end,
+        SetTitle = function(_, v) titleLabel.Text = tostring(v) end,
     }
 end
 
--- ============================================================
--- Label
--- ============================================================
 function LucidUI.Section:CreateLabel(config)
     config = config or {}
     local win, theme = self.Tab.Window, self.Tab.Window.Theme
 
     local TEXT_H   = config.TextSize or 13
-    local ROW_H    = math.max(config.Height or 24, TEXT_H + 10)
+    local ROW_H    = math.max(config.Height or 26, TEXT_H + 10)
     local hasIcon  = config.Icon ~= nil
     local ICON_SZ  = config.IconSize or 16
     local ICON_PAD = 6
@@ -2037,13 +2384,9 @@ function LucidUI.Section:CreateLabel(config)
             Position = UDim2.fromOffset(LEFT_PAD, (ROW_H - ICON_SZ) / 2),
             BackgroundTransparency = 1, ZIndex = 3, Parent = row,
         })
-        local builders = LucidUI.IconBuilders
-        if builders then
-            local builder = builders[config.Icon] or builders.default
-            if builder then
-                local _, parts = builder(iconHolder, ICON_SZ, config.IconColor or theme.TextPrimary)
-                iconParts = parts or {}
-            end
+        if LucidUI.BuildIcon then
+            local ok, _, parts = pcall(LucidUI.BuildIcon, config.Icon, iconHolder, ICON_SZ, config.IconColor or theme.TextPrimary)
+            if ok then iconParts = parts or {} end
         end
     end
 
@@ -2063,14 +2406,6 @@ function LucidUI.Section:CreateLabel(config)
 
     win:_registerTheme(function(t)
         if not config.TextColor then label.TextColor3 = t.TextPrimary end
-        if hasIcon and not config.IconColor then
-            for _, p in ipairs(iconParts) do
-                if typeof(p) == "Instance" then
-                    if p:IsA("UIStroke") then p.Color = t.TextPrimary
-                    elseif p:IsA("GuiObject") then p.BackgroundColor3 = t.TextPrimary end
-                end
-            end
-        end
     end)
 
     self:_track(row)
@@ -2078,6 +2413,7 @@ function LucidUI.Section:CreateLabel(config)
     return {
         Instance = row,
         Set = function(_, v) label.Text = tostring(v) end,
+        Get = function() return label.Text end,
         SetColor = function(_, c)
             label.TextColor3 = c
             config.TextColor = c
@@ -2085,9 +2421,6 @@ function LucidUI.Section:CreateLabel(config)
     }
 end
 
--- ============================================================
--- Paragraph — wrapped body text, no title
--- ============================================================
 function LucidUI.Section:CreateParagraph(config)
     config = config or {}
     local win, theme = self.Tab.Window, self.Tab.Window.Theme
@@ -2120,7 +2453,6 @@ function LucidUI.Section:CreateParagraph(config)
         ZIndex = 3, Parent = row,
     })
 
-    -- Bottom pad spacer
     Create("Frame", {
         Size = UDim2.new(1, 0, 0, PAD_Y),
         Position = UDim2.new(0, 0, 1, 0),
@@ -2138,16 +2470,10 @@ function LucidUI.Section:CreateParagraph(config)
     return {
         Instance = row,
         Set = function(_, v) label.Text = tostring(v) end,
-        SetColor = function(_, c)
-            label.TextColor3 = c
-            config.TextColor = c
-        end,
+        Get = function() return label.Text end,
     }
 end
 
--- ============================================================
--- Divider
--- ============================================================
 function LucidUI.Section:CreateDivider(config)
     config = config or {}
     local win, theme = self.Tab.Window, self.Tab.Window.Theme
@@ -2212,9 +2538,6 @@ function LucidUI.Section:CreateDivider(config)
     return { Instance = row }
 end
 
--- ============================================================
--- Spacer — pure vertical gap
--- ============================================================
 function LucidUI.Section:CreateSpacer(config)
     config = config or {}
     local size = config.Height or 8
@@ -2230,9 +2553,6 @@ function LucidUI.Section:CreateSpacer(config)
     return { Instance = row }
 end
 
--- ============================================================
--- Badge — small pill with text and optional dot
--- ============================================================
 function LucidUI.Section:CreateBadge(config)
     config = config or {}
     local win, theme = self.Tab.Window, self.Tab.Window.Theme
@@ -2258,8 +2578,7 @@ function LucidUI.Section:CreateBadge(config)
         Size = UDim2.fromOffset(badgeW, BADGE_H),
         Position = UDim2.new(
             config.Align == "center" and 0.5 or (config.Align == "right" and 1 or 0),
-            config.Align == "center" and 0 or (config.Align == "right" and 0 or 0),
-            0, 2
+            0, 0, 2
         ),
         AnchorPoint = Vector2.new(
             config.Align == "center" and 0.5 or (config.Align == "right" and 1 or 0),
@@ -2301,10 +2620,6 @@ function LucidUI.Section:CreateBadge(config)
             badge.BackgroundColor3 = t.Accent
             badgeStroke.Color = t.Accent
             label.TextColor3 = t.Accent
-            if hasDot then
-                local d = badge:FindFirstChildWhichIsA("Frame")
-                if d then d.BackgroundColor3 = t.Accent end
-            end
         end
     end)
 
@@ -2322,9 +2637,6 @@ function LucidUI.Section:CreateBadge(config)
     }
 end
 
--- ============================================================
--- StatCard — big number + label, useful for dashboards
--- ============================================================
 function LucidUI.Section:CreateStatCard(config)
     config = config or {}
     local win, theme = self.Tab.Window, self.Tab.Window.Theme
@@ -2348,8 +2660,7 @@ function LucidUI.Section:CreateStatCard(config)
     Corner(12, card)
     local stroke = Stroke(theme.Border, 1, theme.BorderTrans + 0.05, card)
 
-    -- Optional icon block on the right
-    if config.Icon then
+    if config.Icon and LucidUI.BuildIcon then
         local iconHolder = Create("Frame", {
             Size = UDim2.fromOffset(28, 28),
             Position = UDim2.new(1, -18, 0.5, -14),
@@ -2367,12 +2678,7 @@ function LucidUI.Section:CreateStatCard(config)
             AnchorPoint = Vector2.new(0.5, 0.5),
             BackgroundTransparency = 1, ZIndex = 4, Parent = iconHolder,
         })
-
-        local builders = LucidUI.IconBuilders
-        if builders then
-            local builder = builders[config.Icon] or builders.default
-            if builder then builder(iconInner, 18, theme.Accent) end
-        end
+        pcall(LucidUI.BuildIcon, config.Icon, iconInner, 18, theme.Accent)
 
         win:_registerTheme(function(t)
             iconHolder.BackgroundColor3 = t.Accent
@@ -2421,13 +2727,9 @@ function LucidUI.Section:CreateStatCard(config)
         SetLabel = function(_, text) titleLabel.Text = tostring(text) end,
     }
 
-    self:_track(row)
     return obj
 end
 
--- ============================================================
--- StatusIndicator — pulsing dot + text, for online/running states
--- ============================================================
 function LucidUI.Section:CreateStatusIndicator(config)
     config = config or {}
     local win, theme = self.Tab.Window, self.Tab.Window.Theme
@@ -2435,7 +2737,7 @@ function LucidUI.Section:CreateStatusIndicator(config)
     local state = config.Default ~= false
     local flag  = config.Flag
     local DOT_SZ = 8
-    local ROW_H = config.Height or 28
+    local ROW_H = config.Height or 30
 
     local row = Create("Frame", {
         BackgroundTransparency = 1,
@@ -2450,7 +2752,6 @@ function LucidUI.Section:CreateStatusIndicator(config)
         BackgroundTransparency = 1, ZIndex = 3, Parent = row,
     })
 
-    -- Outer pulse ring
     local ring = Create("Frame", {
         Size = UDim2.fromOffset(DOT_SZ, DOT_SZ),
         Position = UDim2.fromScale(0.5, 0.5),
@@ -2461,7 +2762,6 @@ function LucidUI.Section:CreateStatusIndicator(config)
     })
     Corner(999, ring)
 
-    -- Inner solid dot
     local dot = Create("Frame", {
         Size = UDim2.fromOffset(DOT_SZ, DOT_SZ),
         Position = UDim2.fromScale(0.5, 0.5),
@@ -2482,36 +2782,28 @@ function LucidUI.Section:CreateStatusIndicator(config)
         ZIndex = 3, Parent = row,
     })
 
-    -- Pulse loop
-    local pulseConn
     local pulseRun = true
-    pulseConn = RunService.RenderStepped:Connect(function(dt)
+    table.insert(win._conns, RunService.RenderStepped:Connect(function(dt)
         if not pulseRun or not ring.Parent then return end
-        -- ease a t between 0 and 1 back and forth
         local t = (tick() * 1.2) % 1
         local size = DOT_SZ + t * DOT_SZ * 1.4
         ring.Size = UDim2.fromOffset(size, size)
         ring.BackgroundTransparency = 0.2 + t * 0.75
-    end)
-    table.insert(win._conns, pulseConn)
+    end))
 
     local function setState(on, silent)
         state = on
         local c = config.Color or win.Theme.Accent
         if not on then c = win.Theme.TextMuted end
-
         dot.BackgroundColor3 = c
         ring.BackgroundColor3 = c
         ring.BackgroundTransparency = on and 0.5 or 1
-
         pulseRun = on
-
         if config.Text == nil then
             label.Text = on and (config.OnText or "Running") or (config.OffText or "Idle")
         end
-
         if flag then win._configData[flag] = state end
-        if not silent and config.Callback then pcall(config.Callback, state) end
+        if not silent and config.Callback then Compat.safeCallback(config.Callback, state) end
     end
 
     setState(state, true)
@@ -2544,9 +2836,6 @@ function LucidUI.Section:CreateStatusIndicator(config)
     return obj
 end
 
--- ============================================================
--- Banner — inline alert box
--- ============================================================
 function LucidUI.Section:CreateBanner(config)
     config = config or {}
     local win, theme = self.Tab.Window, self.Tab.Window.Theme
@@ -2582,7 +2871,6 @@ function LucidUI.Section:CreateBanner(config)
     Corner(10, card)
     local stroke = Stroke(accent, 1, 0.55, card)
 
-    -- Left accent bar
     local bar = Create("Frame", {
         Size = UDim2.new(0, 3, 1, -16),
         Position = UDim2.fromOffset(8, 8),
@@ -2591,37 +2879,29 @@ function LucidUI.Section:CreateBanner(config)
     })
     Corner(2, bar)
 
-    -- Optional icon
     local ICON_SZ = 16
     local hasIcon = config.Icon ~= false
-    local iconHolder
-    if hasIcon then
-        iconHolder = Create("Frame", {
+    if hasIcon and LucidUI.BuildIcon then
+        local iconHolder = Create("Frame", {
             Size = UDim2.fromOffset(ICON_SZ, ICON_SZ),
             Position = UDim2.fromOffset(20, 12),
             BackgroundTransparency = 1, ZIndex = 4, Parent = card,
         })
-        local builders = LucidUI.IconBuilders
-        if builders then
-            -- Pick a sensible default per variant
-            local iconName = config.Icon
-            if not iconName or iconName == true then
-                iconName = ({
-                    info    = "bell",
-                    success = "check",
-                    warn    = "flame",
-                    error   = "cross",
-                })[variant] or "bell"
-            end
-            local builder = builders[iconName] or builders.default
-            if builder then builder(iconHolder, ICON_SZ, accent) end
+        local iconName = config.Icon
+        if not iconName or iconName == true then
+            iconName = ({
+                info    = "bell",
+                success = "check",
+                warn    = "warning",
+                error   = "cross",
+            })[variant] or "bell"
         end
+        pcall(LucidUI.BuildIcon, iconName, iconHolder, ICON_SZ, accent)
     end
 
     local leftPad = hasIcon and 44 or 22
     local rightPad = 14
 
-    -- Optional title
     local titleLabel
     if title then
         titleLabel = Create("TextLabel", {
@@ -2649,7 +2929,6 @@ function LucidUI.Section:CreateBanner(config)
         ZIndex = 4, Parent = card,
     })
 
-    -- Bottom pad
     Create("Frame", {
         Size = UDim2.new(1, 0, 0, 12),
         Position = UDim2.new(0, 0, 1, 0),
@@ -2678,9 +2957,6 @@ function LucidUI.Section:CreateBanner(config)
     }
 end
 
--- ============================================================
--- Image — display an image from an asset ID or custom asset
--- ============================================================
 function LucidUI.Section:CreateImage(config)
     config = config or {}
     local win, theme = self.Tab.Window, self.Tab.Window.Theme
@@ -2751,7 +3027,7 @@ function LucidUI.Section:CreateImage(config)
 end
 
 -- ============================================================
--- Cleanup and export
+-- Cleanup & export
 -- ============================================================
 if getgenv().LucidUI_ActiveWindows then
     for _, w in ipairs(getgenv().LucidUI_ActiveWindows) do
