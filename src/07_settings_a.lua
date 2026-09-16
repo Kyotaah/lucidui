@@ -1,24 +1,18 @@
 --[[
-    Settings A — theme dropdown, custom theme editor, saved themes.
+    Settings A — theme dropdown, custom theme editor, saved themes,
+    low graphics mode.
 
-    Click handling:
-      Every click goes through BindTap (from 01b_polish.lua).
+    [IMPROVEMENT] Added Low Graphics Mode toggle, active theme
+    checkmark, reset to default, preset swatches in the color picker,
+    and pcall wrapping throughout.
 
     Color picker:
       _openColorPickerModal(opts) is the general-purpose picker.
       Anywhere can call it with { Label, InitialColor, OnChange }.
-      The settings Custom Theme editor and the public
-      Section:CreateColorPicker element both route through it.
-
-      The modal lives directly under W.Gui (not under the settings
-      panel) so it can be opened from anywhere without being clipped
-      by the panel's bounds. Its backdrop absorbs every click while
-      open, so nothing underneath can be interacted with.
 
     Auto-contrast:
       ApplyCustomTheme checks the user's TextPrimary against their
-      Background using WCAG relative luminance. If the contrast ratio
-      is below 4.5:1, it silently swaps to white or near-black.
+      Background using WCAG relative luminance.
 ]]
 
 -- ============================================================
@@ -118,17 +112,6 @@ local function BuildPaintBucketIcon(parent, size, color)
     bodyCorner.Parent = body
     table.insert(parts, body)
 
-    local rim = Create("Frame", {
-        Size = UDim2.new(1, 2, 0, barW),
-        Position = UDim2.new(0.5, 0, 0, 0),
-        AnchorPoint = Vector2.new(0.5, 0),
-        BackgroundColor3 = color,
-        BackgroundTransparency = 0.35,
-        BorderSizePixel = 0,
-        Parent = body,
-    })
-    Corner(barW / 2, rim)
-
     local dropSize = size * 0.16
     local drop = Create("Frame", {
         Size = UDim2.fromOffset(dropSize, dropSize),
@@ -190,12 +173,12 @@ function LucidUI.Window:ApplyCustomTheme()
     for k, v in pairs(base) do t[k] = v end
     for k, v in pairs(self._customTheme) do t[k] = v end
 
-    local readablePrimary, adjusted = autoReadableText(
+    local readablePrimary = autoReadableText(
         self._customTheme.TextPrimary,
         self._customTheme.Background,
         4.5
     )
-    if adjusted then
+    if readablePrimary then
         self._customTheme.TextPrimary = readablePrimary
     end
     t.TextPrimary = readablePrimary
@@ -240,10 +223,10 @@ function LucidUI.Window:SaveCustomTheme(name)
     Compat.ensureFolders()
     local ok = Compat.write("LucidUI/Themes/" .. name .. ".json", encoded)
     if ok then
-        LucidUI:Notify({ Title = "Theme Saved", Message = name })
+        LucidUI:Notify({ Title = "Theme Saved", Message = name, Variant = "success" })
         if self._savedThemeSlotsRefresh then pcall(self._savedThemeSlotsRefresh) end
     else
-        LucidUI:Notify({ Title = "Save Failed", Message = "No file system", Accent = Color3.fromRGB(255,80,80) })
+        LucidUI:Notify({ Title = "Save Failed", Message = "No file system", Variant = "error" })
     end
 end
 
@@ -251,7 +234,7 @@ function LucidUI.Window:LoadCustomTheme(name)
     name = name or "Custom Theme"
     local contents = Compat.read("LucidUI/Themes/" .. name .. ".json")
     if not contents then
-        LucidUI:Notify({ Title = "Load Failed", Message = "Not found: " .. name, Accent = Color3.fromRGB(255,80,80) })
+        LucidUI:Notify({ Title = "Load Failed", Message = "Not found: " .. name, Variant = "error" })
         return
     end
     local data = Compat.decode(contents)
@@ -272,17 +255,23 @@ function LucidUI.Window:LoadCustomTheme(name)
     end
     self:ApplyCustomTheme()
     self.ThemeName = name
-    LucidUI:Notify({ Title = "Theme Loaded", Message = name })
+    LucidUI:Notify({ Title = "Theme Loaded", Message = name, Variant = "success" })
 end
 
 -- ============================================================
 -- General-purpose HSV color picker modal
 -- ============================================================
--- Can be called from anywhere. Pass:
---   Label        — header text
---   InitialColor — starting Color3 (defaults to a blue)
---   OnChange     — function(newColor) called live on every change
---   OnClose      — optional, called when the modal is destroyed
+local PRESET_COLORS = {
+    Color3.fromRGB(10, 132, 255),   -- blue
+    Color3.fromRGB(90, 210, 130),   -- green
+    Color3.fromRGB(255, 189, 46),   -- amber
+    Color3.fromRGB(255, 95, 87),    -- red
+    Color3.fromRGB(189, 147, 249),  -- purple
+    Color3.fromRGB(255, 126, 219),  -- pink
+    Color3.fromRGB(122, 162, 247),  -- sky
+    Color3.fromRGB(255, 255, 255),  -- white
+}
+
 function LucidUI.Window:_openColorPickerModal(opts)
     opts = opts or {}
     local initialColor = opts.InitialColor or Color3.fromRGB(90, 180, 255)
@@ -290,9 +279,8 @@ function LucidUI.Window:_openColorPickerModal(opts)
     local onChange     = opts.OnChange
     local onClose      = opts.OnClose
 
-    -- One picker per window
     if self._colorPickerModal and self._colorPickerModal.Parent then
-        self._colorPickerModal:Destroy()
+        pcall(function() self._colorPickerModal:Destroy() end)
     end
 
     local base = initialColor
@@ -321,7 +309,7 @@ function LucidUI.Window:_openColorPickerModal(opts)
     })
 
     local card = Create("CanvasGroup", {
-        Size = UDim2.fromOffset(360, 260),
+        Size = UDim2.fromOffset(360, 300),
         Position = UDim2.fromScale(0.5, 0.5),
         AnchorPoint = Vector2.new(0.5, 0.5),
         BackgroundColor3 = self.Theme.Background,
@@ -436,10 +424,23 @@ function LucidUI.Window:_openColorPickerModal(opts)
         ZIndex = 6, Parent = hueStrip,
     })
 
+    -- [IMPROVEMENT] Preset swatch row
+    local presetRow = Create("Frame", {
+        Size = UDim2.new(1, -36, 0, 24),
+        Position = UDim2.fromOffset(18, 212),
+        BackgroundTransparency = 1,
+        ZIndex = 3, Parent = card,
+    })
+    Create("UIListLayout", {
+        FillDirection = Enum.FillDirection.Horizontal,
+        Padding = UDim.new(0, 6),
+        Parent = presetRow,
+    })
+
     -- Bottom row
     local preview = Create("Frame", {
         Size = UDim2.fromOffset(32, 32),
-        Position = UDim2.fromOffset(18, 214),
+        Position = UDim2.fromOffset(18, 246),
         BackgroundColor3 = base,
         BorderSizePixel = 0, ZIndex = 3, Parent = card,
     })
@@ -458,7 +459,7 @@ function LucidUI.Window:_openColorPickerModal(opts)
         ClearTextOnFocus = false,
         TextXAlignment = Enum.TextXAlignment.Center,
         Size = UDim2.fromOffset(120, 32),
-        Position = UDim2.fromOffset(60, 214),
+        Position = UDim2.fromOffset(60, 246),
         ZIndex = 3, Parent = card,
     })
     Corner(8, hexBox)
@@ -470,7 +471,7 @@ function LucidUI.Window:_openColorPickerModal(opts)
         BackgroundColor3 = self.Theme.Accent,
         AutoButtonColor = false,
         Size = UDim2.fromOffset(100, 32),
-        Position = UDim2.new(1, -118, 0, 214),
+        Position = UDim2.new(1, -118, 0, 246),
         ZIndex = 3, Parent = card,
     })
     Corner(8, doneBtn)
@@ -484,6 +485,25 @@ function LucidUI.Window:_openColorPickerModal(opts)
         hexBox.Text = string.format("#%02X%02X%02X",
             math.floor(c.R * 255), math.floor(c.G * 255), math.floor(c.B * 255))
         if onChange then pcall(onChange, c) end
+    end
+
+    -- Preset swatches
+    for _, presetColor in ipairs(PRESET_COLORS) do
+        local swatch = Create("TextButton", {
+            Text = "",
+            BackgroundColor3 = presetColor,
+            BorderSizePixel = 0,
+            AutoButtonColor = false,
+            Size = UDim2.fromOffset(24, 24),
+            ZIndex = 4, Parent = presetRow,
+        })
+        Corner(6, swatch)
+        Stroke(self.Theme.Border, 1, 0.6, swatch)
+
+        BindTap(swatch, function()
+            H, S, V = Color3.toHSV(presetColor)
+            applyColor()
+        end)
     end
 
     -- SV drag
@@ -531,18 +551,24 @@ function LucidUI.Window:_openColorPickerModal(opts)
             or input.UserInputType == Enum.UserInputType.Touch then hueDrag = false end
     end))
 
-    -- Hex input
+    -- Hex input (with validation)
     hexBox.FocusLost:Connect(function()
         local hex = hexBox.Text:gsub("#", "")
-        if #hex == 6 then
+        if #hex == 6 and hex:match("^%x+$") then
             local r = tonumber(hex:sub(1, 2), 16)
             local g = tonumber(hex:sub(3, 4), 16)
             local b = tonumber(hex:sub(5, 6), 16)
             if r and g and b then
                 H, S, V = Color3.toHSV(Color3.fromRGB(r, g, b))
                 applyColor()
+                return
             end
         end
+        -- Invalid — restore current text
+        hexBox.Text = string.format("#%02X%02X%02X",
+            math.floor(preview.BackgroundColor3.R * 255),
+            math.floor(preview.BackgroundColor3.G * 255),
+            math.floor(preview.BackgroundColor3.B * 255))
     end)
 
     -- Pop-in
@@ -572,7 +598,7 @@ function LucidUI.Window:_openColorPickerModal(opts)
             if self._colorPickerModal == modal then
                 self._colorPickerModal = nil
             end
-            modal:Destroy()
+            pcall(function() modal:Destroy() end)
             if onClose then pcall(onClose) end
         end)
     end
@@ -581,11 +607,9 @@ function LucidUI.Window:_openColorPickerModal(opts)
     BindTap(closeBtn, closeModal)
     BindTap(doneBtn, closeModal)
 
-    -- Return the modal in case the caller wants to track it
     return modal
 end
 
--- Settings-specific wrapper: opens the picker for a Custom Theme field
 function LucidUI.Window:_openColorPicker(fieldKey, fieldLabel)
     self:_openColorPickerModal({
         Label = fieldLabel,
@@ -598,13 +622,111 @@ function LucidUI.Window:_openColorPicker(fieldKey, fieldLabel)
     })
 end
 
+-- ============================================================
+-- [IMPROVEMENT] Low Graphics Mode
+-- ============================================================
+function LucidUI.Window:_buildPerformanceSettings()
+    self:_addSettingSection("Performance")
+
+    if self._lowGraphics == nil then
+        self._lowGraphics = false
+    end
+
+    local row = Create("Frame", {
+        BackgroundColor3 = self.Theme.Surface,
+        BackgroundTransparency = self.Theme.SurfaceTrans,
+        Size = UDim2.new(1, 0, 0, 44),
+    })
+    Corner(10, row)
+    self:_addSettingFrame(row)
+
+    local label = Create("TextLabel", {
+        Text = "Low Graphics Mode",
+        Font = Enum.Font.GothamMedium, TextSize = 14,
+        TextColor3 = self.Theme.TextPrimary, BackgroundTransparency = 1,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Position = UDim2.fromOffset(14, 4),
+        Size = UDim2.new(1, -100, 0, 18),
+        Parent = row,
+    })
+
+    local subLabel = Create("TextLabel", {
+        Text = "Disables animations & blur (better for mobile)",
+        Font = Enum.Font.Gotham, TextSize = 11,
+        TextColor3 = self.Theme.TextMuted, BackgroundTransparency = 1,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Position = UDim2.fromOffset(14, 22),
+        Size = UDim2.new(1, -100, 0, 14),
+        Parent = row,
+    })
+
+    local track = Create("Frame", {
+        Size = UDim2.fromOffset(44, 24),
+        Position = UDim2.new(1, -58, 0.5, -12),
+        BackgroundColor3 = self._lowGraphics and self.Theme.Accent or self.Theme.ToggleOff,
+        BorderSizePixel = 0, Parent = row,
+    })
+    Corner(12, track)
+
+    local knob = Create("Frame", {
+        Size = UDim2.fromOffset(20, 20),
+        Position = self._lowGraphics and UDim2.new(1, -22, 0.5, -10) or UDim2.fromOffset(2, 2),
+        BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+        BorderSizePixel = 0, Parent = track,
+    })
+    Corner(10, knob)
+
+    local clickArea = Create("TextButton", {
+        Text = "", BackgroundTransparency = 1,
+        Size = UDim2.fromScale(1, 1), ZIndex = 5, Parent = row,
+    })
+
+    local function setLowGraphics(on)
+        self._lowGraphics = on
+        Tween(track, 0.22, {
+            BackgroundColor3 = on and self.Theme.Accent or self.Theme.ToggleOff,
+        }, Enum.EasingStyle.Quart):Play()
+        Tween(knob, 0.22, {
+            Position = on and UDim2.new(1, -22, 0.5, -10) or UDim2.fromOffset(2, 2),
+        }, Enum.EasingStyle.Quart):Play()
+
+        -- Disable glass animations on the main window
+        if self.Main then
+            local sweep = self.Main:FindFirstChild("GlassSweep", true)
+            if sweep then sweep.Visible = not on end
+        end
+    end
+
+    BindTap(clickArea, function()
+        PlayUISound("click")
+        setLowGraphics(not self._lowGraphics)
+    end)
+
+    clickArea.MouseEnter:Connect(function()
+        Tween(row, 0.15, { BackgroundTransparency = math.max(self.Theme.SurfaceTrans - 0.1, 0) }):Play()
+    end)
+    clickArea.MouseLeave:Connect(function()
+        Tween(row, 0.15, { BackgroundTransparency = self.Theme.SurfaceTrans }):Play()
+    end)
+
+    self:_registerTheme(function(t)
+        row.BackgroundColor3 = t.Surface
+        label.TextColor3 = t.TextPrimary
+        subLabel.TextColor3 = t.TextMuted
+        track.BackgroundColor3 = self._lowGraphics and t.Accent or t.ToggleOff
+    end)
+end
+
+-- ============================================================
+-- Theme dropdown
+-- ============================================================
 function LucidUI.Window:_buildThemeSettings()
     self:_addSettingSection("Theme")
 
     local row = Create("Frame", {
         BackgroundColor3 = self.Theme.Surface,
         BackgroundTransparency = self.Theme.SurfaceTrans,
-        Size = UDim2.new(1, 0, 0, 40),
+        Size = UDim2.new(1, 0, 0, 44),
         ClipsDescendants = true,
     })
     Corner(10, row)
@@ -613,7 +735,7 @@ function LucidUI.Window:_buildThemeSettings()
 
     local headerBtn = Create("TextButton", {
         Text = "", BackgroundTransparency = 1,
-        Size = UDim2.new(1, 0, 0, 40), Parent = row,
+        Size = UDim2.new(1, 0, 0, 44), Parent = row,
     })
     Create("TextLabel", {
         Text = "Active Theme", Font = Enum.Font.GothamMedium, TextSize = 14,
@@ -630,11 +752,11 @@ function LucidUI.Window:_buildThemeSettings()
     local arrowLbl = Create("TextLabel", {
         Text = "v", Font = Enum.Font.GothamBold, TextSize = 14,
         TextColor3 = self.Theme.TextMuted, BackgroundTransparency = 1,
-        Position = UDim2.new(1, -24, 0, 0), Size = UDim2.fromOffset(20, 40), Parent = headerBtn,
+        Position = UDim2.new(1, -24, 0, 0), Size = UDim2.fromOffset(20, 44), Parent = headerBtn,
     })
 
     local list = Create("Frame", {
-        Size = UDim2.new(1, -20, 0, 0), Position = UDim2.fromOffset(10, 40),
+        Size = UDim2.new(1, -20, 0, 0), Position = UDim2.fromOffset(10, 44),
         BackgroundTransparency = 1, ClipsDescendants = true, Parent = row,
     })
     Create("UIListLayout", {
@@ -645,7 +767,7 @@ function LucidUI.Window:_buildThemeSettings()
     local optionBtns = {}
 
     local function buildOptions()
-        for _, b in ipairs(optionBtns) do b:Destroy() end
+        for _, b in ipairs(optionBtns) do pcall(function() b:Destroy() end) end
         optionBtns = {}
 
         local options = {}
@@ -665,20 +787,30 @@ function LucidUI.Window:_buildThemeSettings()
         for _, name in ipairs(Compat.listThemes()) do table.insert(options, name) end
 
         for i, name in ipairs(options) do
+            local isActive = (name == self.ThemeName)
             local opt = Create("TextButton", {
-                Text = name, Font = Enum.Font.GothamMedium, TextSize = 13,
-                TextColor3 = self.Theme.TextPrimary, BackgroundColor3 = self.Theme.Background,
-                BackgroundTransparency = 0.5, AutoButtonColor = false,
+                Text = (isActive and "✓  " or "    ") .. name,
+                Font = Enum.Font.GothamMedium, TextSize = 13,
+                TextColor3 = isActive and self.Theme.Accent or self.Theme.TextPrimary,
+                BackgroundColor3 = isActive and self.Theme.Surface or self.Theme.Background,
+                BackgroundTransparency = isActive and 0.3 or 0.5,
+                TextXAlignment = Enum.TextXAlignment.Left,
+                AutoButtonColor = false,
                 Size = UDim2.new(1, 0, 0, 32), LayoutOrder = i, Parent = list,
             })
             Corner(8, opt)
+            Create("UIPadding", { PaddingLeft = UDim.new(0, 8), Parent = opt })
+
             opt.MouseEnter:Connect(function()
                 local t = self.Theme
                 Tween(opt, 0.12, { BackgroundColor3 = t.Accent, BackgroundTransparency = 0.3 }):Play()
             end)
             opt.MouseLeave:Connect(function()
                 local t = self.Theme
-                Tween(opt, 0.12, { BackgroundColor3 = t.Background, BackgroundTransparency = 0.5 }):Play()
+                Tween(opt, 0.12, {
+                    BackgroundColor3 = isActive and t.Surface or t.Background,
+                    BackgroundTransparency = isActive and 0.3 or 0.5,
+                }):Play()
             end)
 
             local themeName = name
@@ -686,7 +818,7 @@ function LucidUI.Window:_buildThemeSettings()
                 valueLbl.Text = themeName
                 expanded = false
                 Tween(list, 0.22, { Size = UDim2.new(1, -20, 0, 0) }):Play()
-                Tween(row, 0.22, { Size = UDim2.new(1, 0, 0, 40) }):Play()
+                Tween(row, 0.22, { Size = UDim2.new(1, 0, 0, 44) }):Play()
                 Tween(arrowLbl, 0.2, { Rotation = 0 }):Play()
                 if themeName == "Custom" then
                     self:ApplyCustomTheme()
@@ -707,7 +839,7 @@ function LucidUI.Window:_buildThemeSettings()
         if expanded then buildOptions() end
         local h = #optionBtns * 36 + 8
         Tween(list, 0.22, { Size = UDim2.new(1, -20, 0, expanded and h or 0) }, Enum.EasingStyle.Quart):Play()
-        Tween(row, 0.22, { Size = UDim2.new(1, 0, 0, expanded and (40 + h + 8) or 40) }, Enum.EasingStyle.Quart):Play()
+        Tween(row, 0.22, { Size = UDim2.new(1, 0, 0, expanded and (44 + h + 8) or 44) }, Enum.EasingStyle.Quart):Play()
         Tween(arrowLbl, 0.2, { Rotation = expanded and 180 or 0 }):Play()
     end)
 
@@ -723,6 +855,9 @@ function LucidUI.Window:_buildThemeSettings()
     end)
 end
 
+-- ============================================================
+-- Custom theme editor
+-- ============================================================
 function LucidUI.Window:_buildCustomThemeSettings()
     self:_addSettingSection("Custom Theme")
     self:_ensureCustomTheme()
@@ -834,13 +969,13 @@ function LucidUI.Window:_buildCustomThemeSettings()
         end
         self:ApplyCustomTheme()
         self._refreshSwatches()
-        LucidUI:Notify({ Title = "Reset", Message = "Custom theme reset to Default" })
+        LucidUI:Notify({ Title = "Reset", Message = "Custom theme reset to Default", Variant = "info" })
     end)
 
     mkActionBtn("Apply Custom", self.Theme.Accent, function()
         self:ApplyCustomTheme()
         self._refreshSwatches()
-        LucidUI:Notify({ Title = "Applied", Message = "Custom theme active" })
+        LucidUI:Notify({ Title = "Applied", Message = "Custom theme active", Variant = "success" })
     end)
 
     local saveRow = Create("Frame", {
@@ -878,7 +1013,7 @@ function LucidUI.Window:_buildCustomThemeSettings()
         if name == "" then
             LucidUI:Notify({
                 Title = "Invalid", Message = "Enter a theme name",
-                Accent = Color3.fromRGB(255, 80, 80),
+                Variant = "error",
             })
             return
         end
@@ -895,6 +1030,9 @@ function LucidUI.Window:_buildCustomThemeSettings()
     end)
 end
 
+-- ============================================================
+-- Saved themes list
+-- ============================================================
 function LucidUI.Window:_buildSavedThemesSettings()
     self:_addSettingSection("Saved Themes")
 
@@ -953,7 +1091,7 @@ function LucidUI.Window:_buildSavedThemesSettings()
 
     local function rebuildSaved()
         for _, f in ipairs(savedRowFrames) do
-            if f and f.Parent then f:Destroy() end
+            if f and f.Parent then pcall(function() f:Destroy() end) end
         end
         savedRowFrames = {}
 
@@ -1020,7 +1158,7 @@ function LucidUI.Window:_buildSavedThemesSettings()
                 Compat.delete("LucidUI/Themes/" .. themeName .. ".json")
                 if self.ThemeName == themeName then self:SetTheme("Default") end
                 rebuildSaved()
-                LucidUI:Notify({ Title = "Deleted", Message = themeName })
+                LucidUI:Notify({ Title = "Deleted", Message = themeName, Variant = "info" })
             end, { MoveThreshold = 8 })
 
             nameBtn.MouseEnter:Connect(function()
