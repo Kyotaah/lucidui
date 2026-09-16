@@ -12,8 +12,8 @@
     so missing keys never crash anything.
 ]]
 
-local LucidUI = getgenv().LucidUI or {}
-getgenv().LucidUI = LucidUI
+getgenv().LucidUI = getgenv().LucidUI or {}
+LucidUI = getgenv().LucidUI
 
 LucidUI._version = LucidUI._version or "0.10.0"
 LucidUI._windows = LucidUI._windows or {}
