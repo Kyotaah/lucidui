@@ -326,13 +326,14 @@ function LucidUI:CreateWindow(config)
     }
 
     W.Header.InputBegan:Connect(function(input)
-        if not isPrimaryPointer(input) then return end
-        if gesture.input then return end
-        gesture.input        = input
-        gesture.mode         = "drag"
-        gesture.startPos     = input.Position
-        gesture.mainStartPos = W.Main.Position
-    end)
+    if not isPrimaryPointer(input) then return end
+    if gesture.input then return end
+    if W._onBeforeDragStart then W:_onBeforeDragStart() end
+    gesture.input        = input
+    gesture.mode         = "drag"
+    gesture.startPos     = input.Position
+    gesture.mainStartPos = W.Main.Position
+end)
 
     local resizeHandle = Create("TextButton", {
         Text = "",
