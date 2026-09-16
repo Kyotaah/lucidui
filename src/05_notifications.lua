@@ -199,19 +199,23 @@ function LucidUI:_renderNotification(config)
     })
 
     local msgLbl = Create("TextLabel", {
-        Text = message,
-        Font = Enum.Font.Gotham,
-        TextSize = 12,
-        TextColor3 = theme.TextSecondary,
-        BackgroundTransparency = 1,
-        TextXAlignment = Enum.TextXAlignment.Left,
-        TextYAlignment = Enum.TextYAlignment.Top,
-        TextWrapped = true,
-        Position = UDim2.fromOffset(iconLeft, 32),
-        Size = UDim2.new(1, -(iconLeft + 14), 0, 0),
-        AutomaticSize = Enum.AutomaticSize.Y,
-        Parent = card,
-    })
+    Text = message,
+    Font = Enum.Font.Gotham,
+    TextSize = 12,
+    TextColor3 = theme.TextSecondary,
+    BackgroundTransparency = 1,
+    TextXAlignment = Enum.TextXAlignment.Left,
+    TextYAlignment = Enum.TextYAlignment.Top,
+    TextWrapped = true,
+    Position = UDim2.fromOffset(iconLeft, 32),
+    Size = UDim2.new(1, -(iconLeft + 14), 0, 0),
+    AutomaticSize = Enum.AutomaticSize.Y,
+    Parent = card,
+})
+Create("UIPadding", {
+    PaddingBottom = UDim.new(0, 18),
+    Parent = msgLbl,
+})
 
     -- Bottom spacer so the card has symmetric padding
     Create("Frame", {
