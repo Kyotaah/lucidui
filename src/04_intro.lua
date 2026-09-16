@@ -645,7 +645,7 @@ function LucidUI:ShowIntro(opts)
             end
 
             prevPct = stage.pct
-        end)
+        end
 
         task.wait(0.25)
         finish()
