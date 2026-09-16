@@ -292,13 +292,7 @@ function LucidUI.Window:SetWatermark(config)
         pillStroke.Color      = t.Border
         nameLabel.TextColor3  = t.TextPrimary
         if W.Dot then W.Dot.BackgroundColor3 = W._color or t.Accent end
-        if fpsLabel then
-            -- Only override if the FPS-tinting logic hasn't set it
-            -- to a warn/error color
-            if not fpsLabel.TextColor3:match or fpsLabel.Text ~= "60" then
-                -- leave as-is, next FPS tick will pick up the right color
-            end
-        end
+        -- FPS label color is managed by the FPS counter loop.
     end)
 
     -- ── Public methods ─────────────────────────────────────────
