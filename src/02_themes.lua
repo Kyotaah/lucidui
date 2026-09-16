@@ -12,11 +12,12 @@
     so missing keys never crash anything.
 ]]
 
-getgenv().LucidUI = getgenv().LucidUI or {}
+getgenv().LucidUI = {}
 LucidUI = getgenv().LucidUI
 
-LucidUI._version = LucidUI._version or "0.10.0"
-LucidUI._windows = LucidUI._windows or {}
+LucidUI._version = "0.10.0"
+LucidUI._windows = {}
+LucidUI._cleanupCallbacks = {}
 
 -- ============================================================
 -- Base theme table
