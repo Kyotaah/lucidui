@@ -39,7 +39,7 @@ function LucidUI.Window:_initDocking(config)
 
     config = config or {}
 
-    self._dockEnabled   = config.Docking ~= false
+    self._dockEnabled   = config.Docking ~= true
     self._dockThreshold = config.DockThreshold or 30
     self._dockMargin    = config.DockMargin    or 12
     self._dockSnapTime  = config.DockSnapTime  or 0.25
