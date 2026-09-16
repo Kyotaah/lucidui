@@ -219,7 +219,7 @@ Create("UIPadding", {
 
     -- Bottom spacer so the card has symmetric padding
     Create("Frame", {
-        Size = UDim2.new(1, 0, 0, 22),
+        Size = UDim2.new(1, 0, 0, 12),
         Position = UDim2.new(0, 0, 1, 0),
         BackgroundTransparency = 1,
         Parent = card,
