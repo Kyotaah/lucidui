@@ -648,7 +648,7 @@ end))
         Tween(W.Main, 0.40, { BackgroundTransparency = W.Theme.BackgroundTrans }):Play()
     end
 
-    if W._initDocking then W:_initDocking(config) end
+    if config.Docking then W:_initDocking(config) end
     if config.IntroEnabled ~= false and type(LucidUI.ShowIntro) == "function" then
         LucidUI:ShowIntro({
             Title       = config.IntroTitle or W.Name,
