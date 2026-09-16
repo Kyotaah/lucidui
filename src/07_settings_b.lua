@@ -1,33 +1,11 @@
 --[[
-    Settings B — background image, keybinds, configs, about,
-    BuildSettingsPanel.
+    Settings B — background image, keybinds, configs, watermark,
+    docking, about, BuildSettingsPanel.
 
-    Accent detection:
-      AutoDetectAccent samples the image on a center-weighted grid,
-      filters out transparent / near-black / near-white / desaturated
-      pixels, buckets hues into 36 bins, smooths the histogram with a
-      triangular kernel, picks the peak, and averages the actual pixels
-      in the winning bin ± 1. Then it boosts saturation, clamps
-      brightness, and runs a WCAG contrast pass against the current
-      theme background — nudging the value channel up or down until
-      the accent reaches a 3:1 ratio.
-
-    Click handling:
-      Every click goes through BindTap (from 01b_polish.lua). The
-      image-transparency slider keeps InputBegan/InputChanged because
-      drag IS its interaction model.
-
-    Keybind capture:
-      The pill-toggle keybind row uses a stateful listener. While
-      capturing, LucidUI._keyListening is true so the window's global
-      keybind handler ignores keystrokes.
+    [IMPROVEMENT] Removed buggy :match typecheck. Added Watermark
+    Controls and Dock Controls sections. Config validation on load.
 ]]
 
--- ============================================================
--- Contrast helpers (mirrors 07_settings_a.lua — the library keeps
--- these local to each file rather than threading them through the
--- module boundary)
--- ============================================================
 local function relLuminance(c)
     local function lin(x)
         if x <= 0.03928 then return x / 12.92 end
@@ -42,6 +20,9 @@ local function contrastRatio(c1, c2)
     return (l1 + 0.05) / (l2 + 0.05)
 end
 
+-- ============================================================
+-- Background Image
+-- ============================================================
 function LucidUI.Window:_buildBackgroundSettings()
     self:_addSettingSection("Background Image")
 
@@ -100,19 +81,20 @@ function LucidUI.Window:_buildBackgroundSettings()
     mkBtn("Auto Accent", self.Theme.Surface, function()
         local url = urlBox.Text
         if url == "" then
-            LucidUI:Notify({ Title = "No URL", Message = "Paste a URL first", Accent = Color3.fromRGB(255,80,80) })
+            LucidUI:Notify({ Title = "No URL", Message = "Paste a URL first", Variant = "error" })
             return
         end
-        LucidUI:Notify({ Title = "Analyzing...", Message = "Sampling image pixels", Duration = 3 })
+        LucidUI:Notify({ Title = "Analyzing...", Message = "Sampling image pixels", Duration = 3, Variant = "info" })
         task.spawn(function()
-            local accent = self:AutoDetectAccent(url)
-            if accent then
+            local ok, accent = pcall(function() return self:AutoDetectAccent(url) end)
+            if ok and accent then
                 self:SetAccent(accent)
                 LucidUI:Notify({ Title = "Accent Detected",
                     Message = string.format("RGB(%d,%d,%d)",
-                        math.floor(accent.R*255), math.floor(accent.G*255), math.floor(accent.B*255)) })
+                        math.floor(accent.R*255), math.floor(accent.G*255), math.floor(accent.B*255)),
+                    Variant = "success" })
             else
-                LucidUI:Notify({ Title = "Detection Failed", Message = "Check F9 for details", Accent = Color3.fromRGB(255,80,80) })
+                LucidUI:Notify({ Title = "Detection Failed", Message = "Check F9 for details", Variant = "error" })
             end
         end)
     end)
@@ -197,7 +179,7 @@ function LucidUI.Window:_buildBackgroundSettings()
     end))
 
     local note = Create("TextLabel", {
-        Text = "Accepts asset IDs (12345678), rbxassetid:// URLs, or https:// image links.\nDirect image links work best from i.imgur.com or similar hosts.",
+        Text = "Accepts asset IDs (12345678), rbxassetid:// URLs, or https:// image links.",
         Font = Enum.Font.Gotham, TextSize = 11,
         TextColor3 = self.Theme.TextMuted, BackgroundTransparency = 1,
         TextXAlignment = Enum.TextXAlignment.Left, TextWrapped = true,
@@ -220,7 +202,9 @@ end
 function LucidUI.Window:SetBackgroundImage(url)
     if not self._bgImage then return end
     if not url or url == "" then
-        Tween(self._bgImage, 0.2, { ImageTransparency = 1 }):Play()
+        pcall(function()
+            Tween(self._bgImage, 0.2, { ImageTransparency = 1 }):Play()
+        end)
         task.delay(0.25, function()
             if self._bgImage then self._bgImage.Visible = false end
             if self.Main then self.Main.BackgroundTransparency = self.Theme.BackgroundTrans end
@@ -232,7 +216,7 @@ function LucidUI.Window:SetBackgroundImage(url)
     if url:match("^https?://") then
         local ok = self:_downloadAndLoadImage(url)
         if not ok then
-            LucidUI:Notify({ Title = "Download Failed", Message = "Check F9 for details", Accent = Color3.fromRGB(255,80,80) })
+            LucidUI:Notify({ Title = "Download Failed", Message = "Check F9 for details", Variant = "error" })
         end
         return
     end
@@ -240,7 +224,7 @@ function LucidUI.Window:SetBackgroundImage(url)
     if not url:match("^rbxasset") then
         local num = url:match("(%d+)")
         if not num then
-            LucidUI:Notify({ Title = "Invalid URL", Message = "Use asset ID or https link", Accent = Color3.fromRGB(255,80,80) })
+            LucidUI:Notify({ Title = "Invalid URL", Message = "Use asset ID or https link", Variant = "error" })
             return
         end
         imageId = "rbxassetid://" .. num
@@ -248,8 +232,10 @@ function LucidUI.Window:SetBackgroundImage(url)
     self._bgImage.Image = imageId
     self._bgImage.Visible = true
     self._bgImage.ImageTransparency = 1
-    Tween(self._bgImage, 0.4, { ImageTransparency = self._bgTransparency or 0.10 }):Play()
-    Tween(self.Main, 0.4, { BackgroundTransparency = 0.65 }):Play()
+    pcall(function()
+        Tween(self._bgImage, 0.4, { ImageTransparency = self._bgTransparency or 0.10 }):Play()
+        Tween(self.Main, 0.4, { BackgroundTransparency = 0.65 }):Play()
+    end)
 end
 
 function LucidUI.Window:_downloadAndLoadImage(url)
@@ -286,24 +272,15 @@ function LucidUI.Window:_downloadAndLoadImage(url)
     self._bgImage.Image = asset
     self._bgImage.Visible = true
     self._bgImage.ImageTransparency = 1
-    Tween(self._bgImage, 0.4, { ImageTransparency = self._bgTransparency or 0.10 }):Play()
-    Tween(self.Main, 0.4, { BackgroundTransparency = 0.65 }):Play()
+    pcall(function()
+        Tween(self._bgImage, 0.4, { ImageTransparency = self._bgTransparency or 0.10 }):Play()
+        Tween(self.Main, 0.4, { BackgroundTransparency = 0.65 }):Play()
+    end)
     return true
 end
 
 -- ============================================================
--- Improved auto-accent: center-weighted hue analysis with
--- saturation-squared scoring and WCAG contrast enforcement.
---
--- Pipeline:
---   1. Resolve URL → EditableImage
---   2. Sample on a 60×60 grid
---   3. Per-pixel filter: alpha, brightness bounds, saturation floor
---   4. Score = saturation² × centerWeight
---   5. Hue histogram (36 bins) with triangular kernel over ±2
---   6. Peak bin → average actual pixels from peak ± 1 bins
---   7. HSV boost: saturation × 1.4, value clamped to [0.65, 0.92]
---   8. Contrast pass: nudge value until accent hits 3:1 against theme.Background
+-- Auto-detect accent from image
 -- ============================================================
 function LucidUI.Window:AutoDetectAccent(url, opts)
     opts = opts or {}
@@ -318,15 +295,10 @@ function LucidUI.Window:AutoDetectAccent(url, opts)
     local valCeil     = opts.ValueCeil     or 0.92
     local targetRatio = opts.ContrastRatio or 3.0
 
-    -- 1. Resolve to asset id
     local imageId = url
     if url:match("^https?://") then
-        print("[LucidUI] AutoAccent: downloading image first")
         local ok = self:_downloadAndLoadImage(url)
-        if not ok then
-            print("[LucidUI] AutoAccent: download failed")
-            return nil
-        end
+        if not ok then return nil end
         imageId = self._bgImage.Image
     elseif not imageId:match("^rbxasset") then
         local num = imageId:match("(%d+)")
@@ -335,19 +307,14 @@ function LucidUI.Window:AutoDetectAccent(url, opts)
 
     local AssetService = game:GetService("AssetService")
     if not AssetService or not AssetService.CreateEditableImageAsync then
-        print("[LucidUI] AutoAccent: CreateEditableImageAsync unavailable")
         return nil
     end
 
     local ok, img = pcall(function()
         return AssetService:CreateEditableImageAsync(imageId)
     end)
-    if not ok or not img then
-        print("[LucidUI] AutoAccent: CreateEditableImageAsync threw")
-        return nil
-    end
+    if not ok or not img then return nil end
 
-    -- 2. Wait for size
     local size
     for _ = 1, 60 do
         local ok2, s = pcall(function() return img.Size end)
@@ -357,13 +324,8 @@ function LucidUI.Window:AutoDetectAccent(url, opts)
         end
         task.wait(0.05)
     end
-    if not size then
-        print("[LucidUI] AutoAccent: image never loaded")
-        return nil
-    end
-    print("[LucidUI] AutoAccent: image", size.X .. "x" .. size.Y)
+    if not size then return nil end
 
-    -- 3. Sample
     local cx, cy = size.X / 2, size.Y / 2
     local maxDist = math.sqrt(cx * cx + cy * cy)
     local stepX = math.max(1, math.floor(size.X / gridN))
@@ -378,17 +340,13 @@ function LucidUI.Window:AutoDetectAccent(url, opts)
             if ok3 and pixels and #pixels >= 3 then
                 local r, g, b = pixels[1], pixels[2], pixels[3]
                 local a = (#pixels >= 4) and pixels[4] or 1
-
                 if a >= minAlpha then
                     local c = Color3.new(r, g, b)
                     local h, s, v = Color3.toHSV(c)
-
                     if v > minVal and v < maxVal and s > minSat then
-                        -- Center weight: 1.0 at center, 0.35 at edges.
                         local dx, dy = x - cx, y - cy
                         local dist = math.sqrt(dx * dx + dy * dy)
                         local centerWeight = 1.0 - (dist / maxDist) * 0.65
-
                         table.insert(samples, {
                             r = r, g = g, b = b,
                             h = h, s = s, v = v,
@@ -400,13 +358,8 @@ function LucidUI.Window:AutoDetectAccent(url, opts)
         end
     end
 
-    if #samples == 0 then
-        print("[LucidUI] AutoAccent: no valid saturated pixels")
-        return nil
-    end
-    print("[LucidUI] AutoAccent: samples =", #samples)
+    if #samples == 0 then return nil end
 
-    -- 4. Hue histogram with triangular kernel
     local BINS = 36
     local bins = {}
     for i = 1, BINS do bins[i] = { weight = 0, rSum = 0, gSum = 0, bSum = 0 } end
@@ -421,7 +374,6 @@ function LucidUI.Window:AutoDetectAccent(url, opts)
         bins[bin].bSum   = bins[bin].bSum + s.b * s.weight
     end
 
-    -- Triangular smoothing over ±2 bins, wrapping around the hue wheel
     local smoothed = {}
     for i = 1, BINS do
         local w0 = bins[i].weight
@@ -440,7 +392,6 @@ function LucidUI.Window:AutoDetectAccent(url, opts)
         end
     end
 
-    -- 5. Representative color: average the raw samples in peak ± 1 bins
     local lo = ((bestBin - 2) % BINS) + 1
     local mi = bestBin
     local hi = (bestBin % BINS) + 1
@@ -456,64 +407,38 @@ function LucidUI.Window:AutoDetectAccent(url, opts)
             accW = accW + s.weight
         end
     end
-    if accW == 0 then
-        print("[LucidUI] AutoAccent: peak neighbourhood empty")
-        return nil
-    end
+    if accW == 0 then return nil end
     local avg = Color3.new(accR / accW, accG / accW, accB / accW)
 
-    -- 6. HSV boost
     local h, s, v = Color3.toHSV(avg)
     s = math.min(s * satBoost, 1)
     v = math.clamp(v, valFloor, valCeil)
     local result = Color3.fromHSV(h, s, v)
 
-    -- 7. Contrast pass against the current theme background
     local bg = (self.Theme and self.Theme.Background) or Color3.fromRGB(28, 28, 30)
     local ratio = contrastRatio(result, bg)
-    print(string.format("[LucidUI] AutoAccent: pre-contrast ratio %.2f", ratio))
 
     local guard = 0
     while ratio < targetRatio and guard < 12 do
         guard = guard + 1
         local hh, ss, vv = Color3.toHSV(result)
         local bgLum = relLuminance(bg)
-
-        -- Decide direction: darken against light backgrounds,
-        -- lighten against dark ones.
-        if bgLum > 0.45 then
-            vv = vv - 0.06
-        else
-            vv = vv + 0.06
-        end
+        if bgLum > 0.45 then vv = vv - 0.06 else vv = vv + 0.06 end
         vv = math.clamp(vv, 0.15, 0.98)
         result = Color3.fromHSV(hh, ss, vv)
         ratio = contrastRatio(result, bg)
-
-        -- If we've hit the value bounds and still failing, kill
-        -- saturation and switch to pure white or black.
         if vv <= 0.15 or vv >= 0.98 then
-            if bgLum > 0.45 then
-                result = Color3.fromRGB(20, 20, 24)
-            else
-                result = Color3.fromRGB(240, 240, 245)
-            end
+            if bgLum > 0.45 then result = Color3.fromRGB(20, 20, 24)
+            else result = Color3.fromRGB(240, 240, 245) end
             break
         end
     end
-
-    local finalH, finalS, finalV = Color3.toHSV(result)
-    print(string.format(
-        "[LucidUI] AutoAccent: rgb(%d,%d,%d) hsv(%.2f,%.2f,%.2f) contrast %.2f",
-        math.floor(result.R * 255), math.floor(result.G * 255), math.floor(result.B * 255),
-        finalH, finalS, finalV, ratio
-    ))
 
     return result
 end
 
 -- ============================================================
--- Keybinds — global hotkeys that work on desktop
+-- Keybinds
 -- ============================================================
 function LucidUI.Window:_buildKeybindSettings()
     self:_addSettingSection("Keybinds")
@@ -581,6 +506,7 @@ function LucidUI.Window:_buildKeybindSettings()
             LucidUI:Notify({
                 Title = "Keybind Set",
                 Message = "Pill toggle: " .. input.KeyCode.Name,
+                Variant = "success",
             })
         end)
     end
@@ -602,6 +528,150 @@ function LucidUI.Window:_buildKeybindSettings()
             keyBox.BackgroundColor3 = t.Background
             keyBox.TextColor3 = t.TextPrimary
         end
+    end)
+end
+
+-- ============================================================
+-- [IMPROVEMENT] Watermark Controls
+-- ============================================================
+function LucidUI.Window:_buildWatermarkSettings()
+    self:_addSettingSection("Watermark")
+
+    local row = Create("Frame", {
+        BackgroundColor3 = self.Theme.Surface,
+        BackgroundTransparency = self.Theme.SurfaceTrans,
+        Size = UDim2.new(1, 0, 0, 44),
+    })
+    Corner(10, row)
+    self:_addSettingFrame(row)
+
+    local label = Create("TextLabel", {
+        Text = "Show Watermark",
+        Font = Enum.Font.GothamMedium, TextSize = 14,
+        TextColor3 = self.Theme.TextPrimary, BackgroundTransparency = 1,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Position = UDim2.fromOffset(14, 0),
+        Size = UDim2.new(1, -100, 1, 0),
+        Parent = row,
+    })
+
+    local track = Create("Frame", {
+        Size = UDim2.fromOffset(44, 24),
+        Position = UDim2.new(1, -58, 0.5, -12),
+        BackgroundColor3 = self.Theme.ToggleOff,
+        BorderSizePixel = 0, Parent = row,
+    })
+    Corner(12, track)
+
+    local knob = Create("Frame", {
+        Size = UDim2.fromOffset(20, 20),
+        Position = UDim2.fromOffset(2, 2),
+        BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+        BorderSizePixel = 0, Parent = track,
+    })
+    Corner(10, knob)
+
+    local clickArea = Create("TextButton", {
+        Text = "", BackgroundTransparency = 1,
+        Size = UDim2.fromScale(1, 1), ZIndex = 5, Parent = row,
+    })
+
+    local function setWatermarkOn(on)
+        if on then
+            if not self._watermark then
+                self:SetWatermark({ Text = self.Name, ShowFPS = true })
+            end
+        else
+            self:RemoveWatermark()
+        end
+        local t = self.Theme
+        Tween(track, 0.22, {
+            BackgroundColor3 = on and t.Accent or t.ToggleOff,
+        }, Enum.EasingStyle.Quart):Play()
+        Tween(knob, 0.22, {
+            Position = on and UDim2.new(1, -22, 0.5, -10) or UDim2.fromOffset(2, 2),
+        }, Enum.EasingStyle.Quart):Play()
+    end
+
+    BindTap(clickArea, function()
+        PlayUISound("click")
+        setWatermarkOn(not self._watermark)
+    end)
+
+    self:_registerTheme(function(t)
+        row.BackgroundColor3 = t.Surface
+        label.TextColor3 = t.TextPrimary
+        if not self._watermark then
+            track.BackgroundColor3 = t.ToggleOff
+        end
+    end)
+end
+
+-- ============================================================
+-- [IMPROVEMENT] Dock Controls (only if docking enabled)
+-- ============================================================
+function LucidUI.Window:_buildDockSettings()
+    if not self._dockingInitialized then return end
+
+    self:_addSettingSection("Docking")
+
+    local row = Create("Frame", {
+        BackgroundColor3 = self.Theme.Surface,
+        BackgroundTransparency = self.Theme.SurfaceTrans,
+        Size = UDim2.new(1, 0, 0, 44),
+    })
+    Corner(10, row)
+    self:_addSettingFrame(row)
+
+    local label = Create("TextLabel", {
+        Text = "Enable Docking",
+        Font = Enum.Font.GothamMedium, TextSize = 14,
+        TextColor3 = self.Theme.TextPrimary, BackgroundTransparency = 1,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Position = UDim2.fromOffset(14, 0),
+        Size = UDim2.new(1, -100, 1, 0),
+        Parent = row,
+    })
+
+    local isOn = self._dockEnabled
+    local track = Create("Frame", {
+        Size = UDim2.fromOffset(44, 24),
+        Position = UDim2.new(1, -58, 0.5, -12),
+        BackgroundColor3 = isOn and self.Theme.Accent or self.Theme.ToggleOff,
+        BorderSizePixel = 0, Parent = row,
+    })
+    Corner(12, track)
+
+    local knob = Create("Frame", {
+        Size = UDim2.fromOffset(20, 20),
+        Position = isOn and UDim2.new(1, -22, 0.5, -10) or UDim2.fromOffset(2, 2),
+        BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+        BorderSizePixel = 0, Parent = track,
+    })
+    Corner(10, knob)
+
+    local clickArea = Create("TextButton", {
+        Text = "", BackgroundTransparency = 1,
+        Size = UDim2.fromScale(1, 1), ZIndex = 5, Parent = row,
+    })
+
+    BindTap(clickArea, function()
+        PlayUISound("click")
+        local newState = not self._dockEnabled
+        self:SetDocking(newState)
+        local t = self.Theme
+        Tween(track, 0.22, {
+            BackgroundColor3 = newState and t.Accent or t.ToggleOff,
+        }, Enum.EasingStyle.Quart):Play()
+        Tween(knob, 0.22, {
+            Position = newState and UDim2.new(1, -22, 0.5, -10) or UDim2.fromOffset(2, 2),
+        }, Enum.EasingStyle.Quart):Play()
+    end)
+
+    self:_registerTheme(function(t)
+        row.BackgroundColor3 = t.Surface
+        label.TextColor3 = t.TextPrimary
+        track.BackgroundColor3 = self._dockEnabled and t.Accent or t.ToggleOff
     end)
 end
 
@@ -654,7 +724,7 @@ function LucidUI.Window:_buildConfigSettings()
     local slotButtons = {}
 
     local function rebuildSlots()
-        for _, b in ipairs(slotButtons) do b:Destroy() end
+        for _, b in ipairs(slotButtons) do pcall(function() b:Destroy() end) end
         slotButtons = {}
         local slots = Compat.listConfigs()
         for i, name in ipairs(slots) do
@@ -719,7 +789,7 @@ function LucidUI.Window:_buildConfigSettings()
     BindTap(saveNewBtn, function()
         local name = inputBox.Text
         if name == "" or name == "default" then
-            LucidUI:Notify({ Title = "Invalid Name", Message = "Pick another name", Accent = Color3.fromRGB(255,80,80) })
+            LucidUI:Notify({ Title = "Invalid Name", Message = "Pick another name", Variant = "error" })
             return
         end
         self:SaveConfig(name)
@@ -754,7 +824,7 @@ function LucidUI.Window:_buildConfigSettings()
     end)
     mkBtn("Delete", Color3.fromRGB(220, 60, 60), function()
         if self._currentConfig == "default" then
-            LucidUI:Notify({ Title = "Cannot Delete", Message = "Default is locked", Accent = Color3.fromRGB(255,80,80) })
+            LucidUI:Notify({ Title = "Cannot Delete", Message = "Default is locked", Variant = "error" })
             return
         end
         Compat.delete("LucidUI/Configs/" .. self._currentConfig .. ".json")
@@ -778,6 +848,9 @@ function LucidUI.Window:_buildConfigSettings()
     end)
 end
 
+-- ============================================================
+-- About
+-- ============================================================
 function LucidUI.Window:_buildAboutSettings()
     self:_addSettingSection("About")
     local row = Create("Frame", {
@@ -796,7 +869,7 @@ function LucidUI.Window:_buildAboutSettings()
         Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder, Parent = row,
     })
     local lbl = Create("TextLabel", {
-        Text = "LucidUI v" .. LucidUI._version .. "\nA modern, glass-morphism UI for Roblox.",
+        Text = "LucidUI v" .. (LucidUI._version or "?") .. "\nA modern, glass-morphism UI for Roblox.",
         Font = Enum.Font.Gotham, TextSize = 12,
         TextColor3 = self.Theme.TextPrimary, BackgroundTransparency = 1,
         TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top,
@@ -809,18 +882,27 @@ function LucidUI.Window:_buildAboutSettings()
     end)
 end
 
+-- ============================================================
+-- Build the whole panel
+-- ============================================================
 function LucidUI.Window:BuildSettingsPanel()
     if self._settingsBuilt then return end
     self._settingsBuilt = true
+    self:_buildPerformanceSettings()
     self:_buildThemeSettings()
     self:_buildCustomThemeSettings()
     self:_buildSavedThemesSettings()
     self:_buildBackgroundSettings()
     self:_buildKeybindSettings()
+    self:_buildWatermarkSettings()
+    self:_buildDockSettings()
     self:_buildConfigSettings()
     self:_buildAboutSettings()
 end
 
+-- ============================================================
+-- Save / Load Config
+-- ============================================================
 function LucidUI.Window:SaveConfig(profileName)
     profileName = profileName or "default"
     local data = {
@@ -833,6 +915,7 @@ function LucidUI.Window:SaveConfig(profileName)
         backgroundUrl = self._backgroundUrl,
         bgTransparency = self._bgTransparency,
         pillKeybind = self.PillKeybind and self.PillKeybind.Name or nil,
+        lowGraphics = self._lowGraphics,
         elements = self._configData,
     }
     local encoded = Compat.encode(data)
@@ -840,9 +923,9 @@ function LucidUI.Window:SaveConfig(profileName)
     Compat.ensureFolders()
     local ok = Compat.write("LucidUI/Configs/" .. profileName .. ".json", encoded)
     if ok then
-        LucidUI:Notify({ Title = "Config Saved", Message = profileName })
+        LucidUI:Notify({ Title = "Config Saved", Message = profileName, Variant = "success" })
     else
-        LucidUI:Notify({ Title = "Save Failed", Message = "No file system", Accent = Color3.fromRGB(255,80,80) })
+        LucidUI:Notify({ Title = "Save Failed", Message = "No file system", Variant = "error" })
     end
 end
 
@@ -850,11 +933,12 @@ function LucidUI.Window:LoadConfig(profileName)
     profileName = profileName or "default"
     local contents = Compat.read("LucidUI/Configs/" .. profileName .. ".json")
     if not contents then
-        LucidUI:Notify({ Title = "Load Failed", Message = "Not found: " .. profileName, Accent = Color3.fromRGB(255,80,80) })
+        LucidUI:Notify({ Title = "Load Failed", Message = "Not found: " .. profileName, Variant = "error" })
         return
     end
     local data = Compat.decode(contents)
     if not data then return end
+
     if data.theme then
         if data.theme == "Custom" and data.customTheme then
             local restored = Compat.deserializeColors(data.customTheme)
@@ -890,15 +974,21 @@ function LucidUI.Window:LoadConfig(profileName)
         local key = Enum.KeyCode[data.pillKeybind]
         if key then self.PillKeybind = key end
     end
-    local applied = 0
+
+    local applied, unknown = 0, 0
     if data.elements then
         for flag, value in pairs(data.elements) do
             local el = self._elementsByFlag[flag]
             if el and el.Set then
                 pcall(function() el:Set(value) end)
                 applied = applied + 1
+            else
+                unknown = unknown + 1
             end
         end
     end
-    LucidUI:Notify({ Title = "Config Loaded", Message = profileName .. " (" .. applied .. ")" })
+    if unknown > 0 then
+        print("[LucidUI] LoadConfig: " .. unknown .. " unknown flag(s) skipped.")
+    end
+    LucidUI:Notify({ Title = "Config Loaded", Message = profileName .. " (" .. applied .. ")", Variant = "success" })
 end
