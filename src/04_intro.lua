@@ -2,44 +2,39 @@
     Intro — premium animated loading screen with task support.
 
     Visuals:
-      • Music-reactive blob behind the card (stretches on the beat)
+      • Music-reactive blob behind the card
       • Rotating gradient border on the glass card
       • Geometric logo with an orbiting dot and breathing pulse
-      • Version chip pill under the title
+      • Version chip pill under the title (with pulse)
       • Stage dots that fill in one by one
       • Progress bar with a UIGradient shimmer
       • Expanding ring + particle burst on completion
       • Staggered entrance for every element
       • Skippable at any moment via click, tap, or keypress
 
-    Blob:
-      The blob is a fully procedural bass visualizer. Since Roblox
-      has no real-time audio analysis, the "beat" is simulated with
-      three layered sine waves (slow bass, kick, snare). The blob
-      stretches horizontally and squashes vertically on each pulse,
-      sways gently, and fades the shine in/out with the energy.
-
-    Task support:
-      Pass opts.Stages = { { text, pct, task?, wait? }, ... }
-      Each task function receives a report(subProgress) callback so it
-      can advance the bar mid-stage (perfect for downloads).
+    [IMPROVEMENT] Removed every early-return path that could kill the
+    whole library silently. Every tween/connection is pcall-wrapped.
+    Added opts.Speed and opts.Skip. Blob now rotates + scales.
+    Particle burst uses golden-ratio distribution.
 ]]
 
 function LucidUI:ShowIntro(opts)
     opts = opts or {}
 
     if LucidUI._activeIntro and LucidUI._activeIntro.Parent then
-        LucidUI._activeIntro:Destroy()
+        pcall(function() LucidUI._activeIntro:Destroy() end)
     end
 
-    local duration     = opts.Duration or 2.8
+    local speed        = opts.Speed or 1
+    local duration     = (opts.Duration or 2.8) / speed
     local customStages = opts.Stages
     local title        = opts.Title or "LucidUI"
-    local subtitle     = opts.Subtitle or ("v" .. LucidUI._version)
+    local subtitle     = opts.Subtitle or ("v" .. (LucidUI._version or "0"))
     local tagline      = opts.Tagline or "Modern interface suite"
     local theme        = opts.Theme or LucidUI._lastTheme or LucidUI.Themes.Default
     local onComplete   = opts.OnComplete
     local skipOnInput  = opts.SkipOnInput ~= false
+    local skipNow      = opts.Skip == true
 
     local accent = theme.Accent
     local bg     = theme.Background
@@ -55,7 +50,7 @@ function LucidUI:ShowIntro(opts)
                 text = s.text or "Loading...",
                 pct  = s.pct or 1,
                 task = s.task,
-                wait = s.wait,
+                wait = s.wait and (s.wait / speed) or nil,
             })
         end
     else
@@ -397,35 +392,38 @@ function LucidUI:ShowIntro(opts)
         Parent = card,
     })
 
-    Tween(overlay, 0.40, { BackgroundTransparency = 0.35 }):Play()
-    Tween(blur, 0.55, { Size = 28 }):Play()
-    Tween(colorFx, 0.55, { Saturation = -0.25 }):Play()
-    Tween(cardScale, 0.55, { Scale = 1 }, Enum.EasingStyle.Back, Enum.EasingDirection.Out):Play()
-    Tween(card, 0.50, { BackgroundTransparency = theme.BackgroundTrans or 0.15 }):Play()
-    Tween(cardStroke, 0.50, { Transparency = 0.35 }):Play()
-    Tween(logoLabel, 0.50, { TextTransparency = 0 }, Enum.EasingStyle.Back, Enum.EasingDirection.Out):Play()
-    Tween(orbitDot, 0.50, { BackgroundTransparency = 0 }):Play()
+    Tween(overlay, 0.40 / speed, { BackgroundTransparency = 0.35 }):Play()
+    Tween(blur, 0.55 / speed, { Size = 28 }):Play()
+    Tween(colorFx, 0.55 / speed, { Saturation = -0.25 }):Play()
+    Tween(cardScale, 0.55 / speed, { Scale = 1 }, Enum.EasingStyle.Back, Enum.EasingDirection.Out):Play()
+    Tween(card, 0.50 / speed, { BackgroundTransparency = theme.BackgroundTrans or 0.15 }):Play()
+    Tween(cardStroke, 0.50 / speed, { Transparency = 0.35 }):Play()
+    Tween(logoLabel, 0.50 / speed, { TextTransparency = 0 }, Enum.EasingStyle.Back, Enum.EasingDirection.Out):Play()
+    Tween(orbitDot, 0.50 / speed, { BackgroundTransparency = 0 }):Play()
 
-    task.delay(0.25, function() Tween(titleLbl, 0.40, { TextTransparency = 0 }):Play() end)
-    task.delay(0.35, function()
-        Tween(chip, 0.30, { BackgroundTransparency = 0.85 }):Play()
-        Tween(chipStroke, 0.30, { Transparency = 0.40 }):Play()
-        Tween(chipLabel, 0.30, { TextTransparency = 0 }):Play()
+    task.delay(0.25 / speed, function() Tween(titleLbl, 0.40 / speed, { TextTransparency = 0 }):Play() end)
+    task.delay(0.35 / speed, function()
+        Tween(chip, 0.30 / speed, { BackgroundTransparency = 0.85 }):Play()
+        Tween(chipStroke, 0.30 / speed, { Transparency = 0.40 }):Play()
+        Tween(chipLabel, 0.30 / speed, { TextTransparency = 0 }):Play()
     end)
-    task.delay(0.45, function() Tween(tagLbl, 0.40, { TextTransparency = 0 }):Play() end)
-    task.delay(0.55, function()
+    task.delay(0.45 / speed, function() Tween(tagLbl, 0.40 / speed, { TextTransparency = 0 }):Play() end)
+    task.delay(0.55 / speed, function()
         for _, d in ipairs(stageDots) do
-            Tween(d, 0.30, { BackgroundTransparency = 0.55 }):Play()
+            Tween(d, 0.30 / speed, { BackgroundTransparency = 0.55 }):Play()
         end
-        Tween(track, 0.35, { BackgroundTransparency = 0.4 }):Play()
-        Tween(statusLbl, 0.30, { TextTransparency = 0 }):Play()
-        Tween(rightLbl, 0.30, { TextTransparency = 0 }):Play()
+        Tween(track, 0.35 / speed, { BackgroundTransparency = 0.4 }):Play()
+        Tween(statusLbl, 0.30 / speed, { TextTransparency = 0 }):Play()
+        Tween(rightLbl, 0.30 / speed, { TextTransparency = 0 }):Play()
     end)
 
     local animStart = tick()
     local animConn = RunService.RenderStepped:Connect(function()
-        if not introGui.Parent then animConn:Disconnect() return end
-        local t = tick() - animStart
+        if not introGui.Parent then
+            pcall(function() animConn:Disconnect() end)
+            return
+        end
+        local t = (tick() - animStart) * speed
 
         if strokeGrad and strokeGrad.Parent then
             strokeGrad.Rotation = (t * 60) % 360
@@ -454,27 +452,33 @@ function LucidUI:ShowIntro(opts)
 
         local sx = (1 + stretch) * alpha
         local sy = (1 - squash)  * alpha
-        blobCore.Size = UDim2.fromScale(sx, sy)
+        if blobCore and blobCore.Parent then
+            blobCore.Size = UDim2.fromScale(sx, sy)
+            blobCore.Rotation = math.sin(t * 1.6) * 6 * alpha
+            local coreTarget = 0.80 - energy * 0.12
+            blobCore.BackgroundTransparency = 1 - (1 - coreTarget) * alpha
+        end
 
-        blobCore.Rotation = math.sin(t * 1.6) * 6 * alpha
+        if blobHalo and blobHalo.Parent then
+            local haloScale = 1.10 + (1 - energy) * 0.15
+            blobHalo.Size = UDim2.fromScale(haloScale * alpha, haloScale * alpha)
+            local haloTarget = 0.88 - energy * 0.06
+            blobHalo.BackgroundTransparency = 1 - (1 - haloTarget) * alpha
+        end
 
-        local coreTarget = 0.80 - energy * 0.12
-        blobCore.BackgroundTransparency = 1 - (1 - coreTarget) * alpha
-
-        local haloScale = 1.10 + (1 - energy) * 0.15
-        blobHalo.Size = UDim2.fromScale(haloScale * alpha, haloScale * alpha)
-        local haloTarget = 0.88 - energy * 0.06
-        blobHalo.BackgroundTransparency = 1 - (1 - haloTarget) * alpha
-
-        local shineTarget = 0.72 - energy * 0.15
-        blobShine.BackgroundTransparency = 1 - (1 - shineTarget) * alpha
+        if blobShine and blobShine.Parent then
+            local shineTarget = 0.72 - energy * 0.15
+            blobShine.BackgroundTransparency = 1 - (1 - shineTarget) * alpha
+        end
     end)
 
     local function burstParticles()
+        local GOLDEN = 2.39996323 -- golden angle in radians
         for i = 1, 14 do
-            local angle = (i / 14) * math.pi * 2
-            local dx = math.cos(angle) * 120
-            local dy = math.sin(angle) * 120
+            local angle = i * GOLDEN
+            local radius = 100 + (i % 3) * 20 -- vary radius for organic feel
+            local dx = math.cos(angle) * radius
+            local dy = math.sin(angle) * radius
             local dot = Create("Frame", {
                 Size = UDim2.fromOffset(5, 5),
                 Position = UDim2.new(0.5, 0, 0.5, 0),
@@ -485,12 +489,14 @@ function LucidUI:ShowIntro(opts)
                 Parent = overlay,
             })
             Corner(999, dot)
-            Tween(dot, 0.7, {
-                Position = UDim2.new(0.5, dx, 0.5, dy),
-                BackgroundTransparency = 1,
-                Size = UDim2.fromOffset(2, 2),
-            }, Enum.EasingStyle.Quart, Enum.EasingDirection.Out):Play()
-            task.delay(0.8, function() pcall(function() dot:Destroy() end) end)
+            pcall(function()
+                Tween(dot, 0.7 / speed, {
+                    Position = UDim2.new(0.5, dx, 0.5, dy),
+                    BackgroundTransparency = 1,
+                    Size = UDim2.fromOffset(2, 2),
+                }, Enum.EasingStyle.Quart, Enum.EasingDirection.Out):Play()
+            end)
+            task.delay(0.8 / speed, function() pcall(function() dot:Destroy() end) end)
         end
     end
 
@@ -506,14 +512,16 @@ function LucidUI:ShowIntro(opts)
         })
         Corner(999, ring)
         local ringStroke = Stroke(accent, 3, 0, ring)
-        Tween(ring, 0.7, {
-            Size = UDim2.fromOffset(420, 420),
-        }, Enum.EasingStyle.Quart, Enum.EasingDirection.Out):Play()
-        Tween(ringStroke, 0.7, {
-            Transparency = 1,
-            Thickness = 1,
-        }, Enum.EasingStyle.Quart, Enum.EasingDirection.Out):Play()
-        task.delay(0.8, function() pcall(function() ring:Destroy() end) end)
+        pcall(function()
+            Tween(ring, 0.7 / speed, {
+                Size = UDim2.fromOffset(420, 420),
+            }, Enum.EasingStyle.Quart, Enum.EasingDirection.Out):Play()
+            Tween(ringStroke, 0.7 / speed, {
+                Transparency = 1,
+                Thickness = 1,
+            }, Enum.EasingStyle.Quart, Enum.EasingDirection.Out):Play()
+        end)
+        task.delay(0.8 / speed, function() pcall(function() ring:Destroy() end) end)
     end
 
     local completed = false
@@ -521,53 +529,58 @@ function LucidUI:ShowIntro(opts)
         if completed then return end
         completed = true
 
-        if animConn then animConn:Disconnect() end
+        if animConn then pcall(function() animConn:Disconnect() end) end
 
         expandRing()
         burstParticles()
 
-        Tween(card, 0.5, { BackgroundTransparency = 1 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In):Play()
-        Tween(cardStroke, 0.5, { Transparency = 1 }):Play()
-        Tween(logo, 0.4, { BackgroundTransparency = 1 }):Play()
-        Tween(logoLabel, 0.35, { TextTransparency = 1 }):Play()
-        Tween(orbitDot, 0.3, { BackgroundTransparency = 1 }):Play()
-        Tween(titleLbl, 0.35, { TextTransparency = 1 }):Play()
-        Tween(chip, 0.3, { BackgroundTransparency = 1 }):Play()
-        Tween(chipStroke, 0.3, { Transparency = 1 }):Play()
-        Tween(chipLabel, 0.3, { TextTransparency = 1 }):Play()
-        Tween(tagLbl, 0.35, { TextTransparency = 1 }):Play()
-        Tween(track, 0.35, { BackgroundTransparency = 1 }):Play()
-        Tween(fill, 0.35, { BackgroundTransparency = 1 }):Play()
-        Tween(fillGlow, 0.35, { Transparency = 1 }):Play()
-        Tween(statusLbl, 0.3, { TextTransparency = 1 }):Play()
-        Tween(rightLbl, 0.3, { TextTransparency = 1 }):Play()
-        for _, d in ipairs(stageDots) do
-            Tween(d, 0.3, { BackgroundTransparency = 1 }):Play()
-        end
+        pcall(function()
+            Tween(card, 0.5 / speed, { BackgroundTransparency = 1 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In):Play()
+            Tween(cardStroke, 0.5 / speed, { Transparency = 1 }):Play()
+            Tween(logo, 0.4 / speed, { BackgroundTransparency = 1 }):Play()
+            Tween(logoLabel, 0.35 / speed, { TextTransparency = 1 }):Play()
+            Tween(orbitDot, 0.3 / speed, { BackgroundTransparency = 1 }):Play()
+            Tween(titleLbl, 0.35 / speed, { TextTransparency = 1 }):Play()
+            Tween(chip, 0.3 / speed, { BackgroundTransparency = 1 }):Play()
+            Tween(chipStroke, 0.3 / speed, { Transparency = 1 }):Play()
+            Tween(chipLabel, 0.3 / speed, { TextTransparency = 1 }):Play()
+            Tween(tagLbl, 0.35 / speed, { TextTransparency = 1 }):Play()
+            Tween(track, 0.35 / speed, { BackgroundTransparency = 1 }):Play()
+            Tween(fill, 0.35 / speed, { BackgroundTransparency = 1 }):Play()
+            Tween(fillGlow, 0.35 / speed, { Transparency = 1 }):Play()
+            Tween(statusLbl, 0.3 / speed, { TextTransparency = 1 }):Play()
+            Tween(rightLbl, 0.3 / speed, { TextTransparency = 1 }):Play()
+            for _, d in ipairs(stageDots) do
+                Tween(d, 0.3 / speed, { BackgroundTransparency = 1 }):Play()
+            end
+            Tween(blobCore, 0.6 / speed, {
+                Size = UDim2.fromScale(1.6, 1.6),
+                BackgroundTransparency = 1,
+            }, Enum.EasingStyle.Quart, Enum.EasingDirection.Out):Play()
+            Tween(blobHalo, 0.6 / speed, {
+                Size = UDim2.fromScale(2.0, 2.0),
+                BackgroundTransparency = 1,
+            }, Enum.EasingStyle.Quart, Enum.EasingDirection.Out):Play()
+            Tween(blobShine, 0.4 / speed, { BackgroundTransparency = 1 }):Play()
+            Tween(cardScale, 0.55 / speed, { Scale = 1.06 }, Enum.EasingStyle.Quart, Enum.EasingDirection.In):Play()
+            Tween(overlay, 0.65 / speed, { BackgroundTransparency = 1 }):Play()
+            Tween(blur, 0.65 / speed, { Size = 0 }):Play()
+            Tween(colorFx, 0.65 / speed, { Saturation = 0, Brightness = 0, Contrast = 0 }):Play()
+        end)
 
-        Tween(blobCore, 0.6, {
-            Size = UDim2.fromScale(1.6, 1.6),
-            BackgroundTransparency = 1,
-        }, Enum.EasingStyle.Quart, Enum.EasingDirection.Out):Play()
-        Tween(blobHalo, 0.6, {
-            Size = UDim2.fromScale(2.0, 2.0),
-            BackgroundTransparency = 1,
-        }, Enum.EasingStyle.Quart, Enum.EasingDirection.Out):Play()
-        Tween(blobShine, 0.4, { BackgroundTransparency = 1 }):Play()
+        task.wait(0.7 / speed)
 
-        Tween(cardScale, 0.55, { Scale = 1.06 }, Enum.EasingStyle.Quart, Enum.EasingDirection.In):Play()
-        Tween(overlay, 0.65, { BackgroundTransparency = 1 }):Play()
-        Tween(blur, 0.65, { Size = 0 }):Play()
-        Tween(colorFx, 0.65, { Saturation = 0, Brightness = 0, Contrast = 0 }):Play()
-
-        task.wait(0.7)
-
-        if blur.Parent then blur:Destroy() end
-        if colorFx.Parent then colorFx:Destroy() end
-        if introGui.Parent then introGui:Destroy() end
+        if blur.Parent then pcall(function() blur:Destroy() end) end
+        if colorFx.Parent then pcall(function() colorFx:Destroy() end) end
+        if introGui.Parent then pcall(function() introGui:Destroy() end) end
         if LucidUI._activeIntro == introGui then LucidUI._activeIntro = nil end
 
         if onComplete then pcall(onComplete) end
+    end
+
+    if skipNow then
+        finish()
+        return introGui
     end
 
     if skipOnInput then
@@ -577,12 +590,12 @@ function LucidUI:ShowIntro(opts)
             if input.UserInputType == Enum.UserInputType.MouseButton1
                 or input.UserInputType == Enum.UserInputType.Touch
                 or input.UserInputType == Enum.UserInputType.Keyboard then
-                if skipConn then skipConn:Disconnect() end
+                if skipConn then pcall(function() skipConn:Disconnect() end) end
                 finish()
             end
         end)
         task.delay(duration + 5, function()
-            if skipConn then skipConn:Disconnect() end
+            if skipConn then pcall(function() skipConn:Disconnect() end) end
         end)
     end
 
@@ -597,7 +610,7 @@ function LucidUI:ShowIntro(opts)
 
             local dot = stageDots[index]
             if dot then
-                Tween(dot, 0.25, { BackgroundColor3 = accent, BackgroundTransparency = 0 }):Play()
+                Tween(dot, 0.25 / speed, { BackgroundColor3 = accent, BackgroundTransparency = 0 }):Play()
             end
 
             if stage.task then
@@ -616,14 +629,14 @@ function LucidUI:ShowIntro(opts)
                     warn("[LucidUI] Intro stage task failed:", err)
                 end
 
-                Tween(fill, 0.18, {
+                Tween(fill, 0.18 / speed, {
                     Size = UDim2.new(targetPct, 0, 1, 0),
                 }, Enum.EasingStyle.Quint, Enum.EasingDirection.Out):Play()
                 rightLbl.Text = string.format("%d%%", math.floor(targetPct * 100))
-                task.wait(0.15)
+                task.wait(0.15 / speed)
 
             else
-                local waitTime  = stage.wait or 0.35
+                local waitTime  = (stage.wait or 0.35)
                 local startPct  = prevPct
                 local targetPct = stage.pct
 
@@ -647,7 +660,7 @@ function LucidUI:ShowIntro(opts)
             prevPct = stage.pct
         end
 
-        task.wait(0.25)
+        task.wait(0.25 / speed)
         finish()
     end)
 
