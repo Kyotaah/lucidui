@@ -29,12 +29,9 @@ local LocalPlayer = Players.LocalPlayer
 
 -- [IMPROVEMENT] Safe wait instead of early return. If PlayerGui
 -- isn't ready, wait up to 30 seconds for it.
-local PlayerGui = LocalPlayer:FindFirstChildOfType("PlayerGui")
+local PlayerGui = LocalPlayer:FindFirstChild("PlayerGui")
 if not PlayerGui then
     PlayerGui = LocalPlayer:WaitForChild("PlayerGui", 30)
-end
-if not PlayerGui then
-    warn("[LucidUI] PlayerGui was not found after 30 seconds. UI may not render.")
 end
 
 -- [IMPROVEMENT] Safe wait for Camera.
