@@ -33,7 +33,17 @@ end
 -- ============================================================
 local function AttachSetColor(parts, strokes)
     strokes = strokes or {}
-    local api = { __parts = parts, __strokes = strokes }
+
+    -- [FIX] Copy parts into the API table with numeric indices so
+    -- ipairs() works on it directly. The previous setmetatable
+    -- approach broke ipairs(), so the theme system couldn't
+    -- recolor icons when the theme changed.
+    local api = {}
+    for i, p in ipairs(parts) do
+        api[i] = p
+    end
+    api.__parts   = parts
+    api.__strokes = strokes
 
     function api:SetColor(color)
         for _, p in ipairs(parts) do
@@ -50,11 +60,7 @@ local function AttachSetColor(parts, strokes)
         end
     end
 
-    return setmetatable(api, {
-        __index = function(_, k) return parts[k] end,
-        __len = function() return #parts end,
-        __ipairs = function() return ipairs(parts) end,
-    })
+    return api
 end
 
 -- ============================================================
