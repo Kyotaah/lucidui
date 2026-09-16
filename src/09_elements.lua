@@ -3027,24 +3027,32 @@ function LucidUI.Section:CreateImage(config)
 end
 
 -- ============================================================
--- Cleanup & export
+-- Cleanup Registration API
 -- ============================================================
-if getgenv().LucidUI_ActiveWindows then
-    for _, w in ipairs(getgenv().LucidUI_ActiveWindows) do
-        pcall(function()
-            for _, c in ipairs(w._conns or {}) do
-                if typeof(c) == "RBXScriptConnection" then c:Disconnect() end
-            end
-            if w.Gui then w.Gui:Destroy() end
-        end)
+-- Register a cleanup callback that runs automatically the next
+-- time the script is re-executed. Use this for ANY feature that
+-- creates connections, loops, character changes, or remotes.
+--
+-- Example:
+--     local conn = RunService.Heartbeat:Connect(function() ... end)
+--     LucidUI:OnCleanup(function()
+--         conn:Disconnect()
+--     end)
+-- ============================================================
+function LucidUI:OnCleanup(fn)
+    if type(fn) ~= "function" then
+        warn("[LucidUI] OnCleanup expects a function")
+        return
     end
-    pcall(function()
-        if LucidUI._notifRoot then LucidUI._notifRoot:Destroy() end
-    end)
+    LucidUI._cleanupCallbacks = LucidUI._cleanupCallbacks or {}
+    table.insert(LucidUI._cleanupCallbacks, fn)
 end
 
-getgenv().LucidUI_ActiveWindows = LucidUI._windows
+-- ============================================================
+-- Export
+-- ============================================================
 getgenv().LucidUI = LucidUI
+getgenv().LucidUI_ActiveWindows = LucidUI._windows
 
 print("[LucidUI] v" .. LucidUI._version .. " loaded")
 
