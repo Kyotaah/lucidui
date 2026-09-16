@@ -376,35 +376,38 @@ resizeHandle.InputBegan:Connect(function(input)
     if W._docked then return end
     gesture.input     = input
     gesture.mode      = "resize"
+    gesture.startPos  = input.Position
+    gesture.startSize = { X = W._width, Y = W._height }
+end)
 
-    table.insert(W._conns, UserInputService.InputChanged:Connect(function(input)
-        if input ~= gesture.input then return end
+table.insert(W._conns, UserInputService.InputChanged:Connect(function(input)
+    if input ~= gesture.input then return end
 
-        if gesture.mode == "drag" then
-           local d = input.Position - gesture.startPos
-           W.Main.Position = UDim2.new(
-              gesture.mainStartPos.X.Scale, gesture.mainStartPos.X.Offset + d.X,
-              gesture.mainStartPos.Y.Scale, gesture.mainStartPos.Y.Offset + d.Y
-    )
-    if W._onDragTick then W:_onDragTick() end
-elseif gesture.mode == "resize" then
-            local d = input.Position - gesture.startPos
-            W._width  = math.clamp(gesture.startSize.X + d.X, W._minWidth,  W._maxWidth)
-            W._height = math.clamp(gesture.startSize.Y + d.Y, W._minHeight, W._maxHeight)
-            W._fullSize      = UDim2.fromOffset(W._width, W._height)
-            W._collapsedSize = UDim2.fromOffset(W._width, 44)
+    if gesture.mode == "drag" then
+        local d = input.Position - gesture.startPos
+        W.Main.Position = UDim2.new(
+            gesture.mainStartPos.X.Scale, gesture.mainStartPos.X.Offset + d.X,
+            gesture.mainStartPos.Y.Scale, gesture.mainStartPos.Y.Offset + d.Y
+        )
+        if W._onDragTick then W:_onDragTick() end
+    elseif gesture.mode == "resize" then
+        local d = input.Position - gesture.startPos
+        W._width  = math.clamp(gesture.startSize.X + d.X, W._minWidth,  W._maxWidth)
+        W._height = math.clamp(gesture.startSize.Y + d.Y, W._minHeight, W._maxHeight)
+        W._fullSize      = UDim2.fromOffset(W._width, W._height)
+        W._collapsedSize = UDim2.fromOffset(W._width, 44)
 
-            local tpx = TextService:GetTextSize(
-                W.Name, 16, Enum.Font.GothamBold, Vector2.new(2000, 44)
-            )
-            W._compactWidth = math.clamp(tpx.X + 120, 220, W._width)
+        local tpx = TextService:GetTextSize(
+            W.Name, 16, Enum.Font.GothamBold, Vector2.new(2000, 44)
+        )
+        W._compactWidth = math.clamp(tpx.X + 120, 220, W._width)
 
-            if not W.Minimized then
-                W.Main.Size    = UDim2.fromOffset(W._width, W._height)
-                W.Content.Size = UDim2.new(1, -24, 1, -110)
-            end
+        if not W.Minimized then
+            W.Main.Size    = UDim2.fromOffset(W._width, W._height)
+            W.Content.Size = UDim2.new(1, -24, 1, -110)
         end
-    end))
+    end
+end))
 
 table.insert(W._conns, UserInputService.InputEnded:Connect(function(input)
     if input ~= gesture.input then return end
