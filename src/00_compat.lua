@@ -26,6 +26,30 @@ function Compat.hasListfiles()
 end
 
 -- ============================================================
+-- [IMPROVEMENT] Executor Name Detection
+-- ============================================================
+function Compat.getExecutorName()
+    if syn and syn.protect_gui then return "Synapse X" end
+    if KRNL_LOADED then return "Krnl" end
+    if getgenv and getgenv().IS_SCRIPTWARE then return "Script-Ware" end
+    if is_sirhurt_closure then return "SirHurt" end
+    if type(getexecutorname) == "function" then return getexecutorname() end
+    if type(identifyexecutor) == "function" then return identifyexecutor() end
+    return "Unknown Executor"
+end
+
+-- ============================================================
+-- [IMPROVEMENT] Safe Callback Wrapper
+-- ============================================================
+function Compat.safeCallback(fn, ...)
+    if type(fn) ~= "function" then return end
+    local ok, err = pcall(fn, ...)
+    if not ok then
+        warn("[LucidUI] Callback error: " .. tostring(err))
+    end
+end
+
+-- ============================================================
 -- File system
 -- ============================================================
 function Compat.write(path, content)
@@ -163,3 +187,5 @@ function Compat.deserializeColors(t)
     end
     return out
 end
+
+return Compat
