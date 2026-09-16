@@ -1,60 +1,57 @@
 --[[
     Polish — ripple, hover glow, hover tooltip, press scale, UI sounds.
 
-    [IMPROVEMENT] BindTap now cleans up its input connections when the
-    target is destroyed mid-press. PlayUISound pools its Sound instances
-    to prevent spam. AttachPressScale gives tactile feedback. BindTap
-    accepts options.Sound and options.Ripple to toggle effects per element.
+    [IMPROVEMENT] Sound helpers are declared FIRST so BindTap can see
+    them. This fixes the scoping bug where PlayUISound was referenced
+    before it was declared, causing "attempt to call a nil value" on
+    every click.
 ]]
 
 -- ============================================================
--- Ripple
+-- UI Sounds (MUST come before BindTap)
 -- ============================================================
-local function SpawnRipple(button, px, py)
-    local parentZ = button.ZIndex or 1
-    local ripple = Create("Frame", {
-        Name = "LucidRipple",
-        AnchorPoint = Vector2.new(0.5, 0.5),
-        Position = UDim2.fromOffset(px, py),
-        Size = UDim2.fromOffset(0, 0),
-        BackgroundColor3 = Color3.fromRGB(255, 255, 255),
-        BackgroundTransparency = 0.55,
-        BorderSizePixel = 0,
-        ZIndex = math.clamp(parentZ + 5, 1, 200), -- [IMPROVEMENT] clamped
-        Parent = button,
-    })
-    Corner(999, ripple)
+local soundPool = {}
+local SOUND_IDS = {
+    click = "rbxasset://sounds/electronicpingshort.wav",
+    hover = "rbxasset://sounds/switch.wav",
+}
 
-    local maxSize = math.max(button.AbsoluteSize.X, button.AbsoluteSize.Y) * 2.2
-    local t = TweenService:Create(
-        ripple,
-        TweenInfo.new(0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-        {
-            Size = UDim2.fromOffset(maxSize, maxSize),
-            BackgroundTransparency = 1,
-        }
-    )
-    t:Play()
-    t.Completed:Connect(function()
-        pcall(function() ripple:Destroy() end)
-    end)
+local function PlayUISound(kind)
+    local id = SOUND_IDS[kind]
+    if not id then return end
+
+    soundPool[kind] = soundPool[kind] or {}
+    local pool = soundPool[kind]
+
+    local s
+    for _, sound in ipairs(pool) do
+        if not sound.Playing then s = sound break end
+    end
+
+    if not s then
+        if #pool >= 4 then return end
+        s = Instance.new("Sound")
+        s.SoundId = id
+        s.Volume = (kind == "click") and 0.15 or 0.07
+        s.Parent = SoundService
+        table.insert(pool, s)
+    end
+
+    pcall(function() s:Play() end)
 end
 
-local function AttachRipple(button)
-    button.ClipsDescendants = true
-    button.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-            or input.UserInputType == Enum.UserInputType.Touch then
-            local abs = button.AbsolutePosition
-            local px = input.Position.X - abs.X
-            local py = input.Position.Y - abs.Y
-            SpawnRipple(button, px, py)
-        end
+local function AttachHoverSound(element)
+    local last = 0
+    element.MouseEnter:Connect(function()
+        local now = tick()
+        if now - last < 0.12 then return end
+        last = now
+        PlayUISound("hover")
     end)
 end
 
 -- ============================================================
--- [IMPROVEMENT] Press Scale — tactile feedback on press
+-- Press Scale
 -- ============================================================
 local function AttachPressScale(button, scaleAmount)
     scaleAmount = scaleAmount or 0.96
@@ -65,10 +62,8 @@ local function AttachPressScale(button, scaleAmount)
             or input.UserInputType == Enum.UserInputType.Touch then
             Tween(button, 0.08, {
                 Size = UDim2.new(
-                    originalSize.X.Scale * scaleAmount,
-                    originalSize.X.Offset,
-                    originalSize.Y.Scale * scaleAmount,
-                    originalSize.Y.Offset
+                    originalSize.X.Scale * scaleAmount, originalSize.X.Offset,
+                    originalSize.Y.Scale * scaleAmount, originalSize.Y.Offset
                 ),
             }, Enum.EasingStyle.Quad, Enum.EasingDirection.Out):Play()
         end
@@ -89,10 +84,6 @@ end
 
 -- ============================================================
 -- BindTap — tap vs drag discriminator
---
--- [IMPROVEMENT] Now safe against the target being destroyed
--- mid-press, and supports options.Sound / options.Ripple
--- / options.Scale to toggle those effects.
 -- ============================================================
 local function BindTap(guiObject, callback, options)
     options = options or {}
@@ -149,18 +140,63 @@ local function BindTap(guiObject, callback, options)
             local isTap = (not moved) and duration <= maxDuration
 
             if isTap then
-                if withSound then PlayUISound("click") end
+                if withSound then pcall(PlayUISound, "click") end
                 pcall(callback, input)
             elseif onCancel then
                 pcall(onCancel, input)
             end
         end)
 
-        -- [IMPROVEMENT] If the target is destroyed mid-press, clean up.
         destroyConn = guiObject.Destroying:Connect(function()
             finished = true
             cleanup()
         end)
+    end)
+end
+
+-- ============================================================
+-- Ripple
+-- ============================================================
+local function SpawnRipple(button, px, py)
+    local parentZ = button.ZIndex or 1
+    local ripple = Create("Frame", {
+        Name = "LucidRipple",
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.fromOffset(px, py),
+        Size = UDim2.fromOffset(0, 0),
+        BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+        BackgroundTransparency = 0.55,
+        BorderSizePixel = 0,
+        ZIndex = math.clamp(parentZ + 5, 1, 200),
+        Parent = button,
+    })
+    Corner(999, ripple)
+
+    local maxSize = math.max(button.AbsoluteSize.X, button.AbsoluteSize.Y) * 2.2
+    local t = TweenService:Create(
+        ripple,
+        TweenInfo.new(0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+        {
+            Size = UDim2.fromOffset(maxSize, maxSize),
+            BackgroundTransparency = 1,
+        }
+    )
+    t:Play()
+    t.Completed:Connect(function()
+        pcall(function() ripple:Destroy() end)
+    end)
+end
+
+local function AttachRipple(button)
+    button.ClipsDescendants = true
+    button.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+            or input.UserInputType == Enum.UserInputType.Touch then
+            local abs = button.AbsolutePosition
+            local px = input.Position.X - abs.X
+            local py = input.Position.Y - abs.Y
+            SpawnRipple(button, px, py)
+        end
     end)
 end
 
@@ -190,9 +226,7 @@ local function AttachHoverGlow(element, accent)
 end
 
 -- ============================================================
--- [IMPROVEMENT] Tooltip — small floating label on hover.
--- Useful for icon-only buttons or settings the user might not
--- understand at a glance.
+-- Tooltip
 -- ============================================================
 local tooltipGui
 local function GetTooltipGui()
@@ -246,10 +280,8 @@ local function AttachTooltip(element, text, opts)
             Parent = label,
         })
 
-        -- Position above the element
         local abs = element.AbsolutePosition
         local sz  = element.AbsoluteSize
-        local pad = 8
         task.defer(function()
             if not tooltip or not tooltip.Parent then return end
             local w = tooltip.AbsoluteSize.X
@@ -278,49 +310,5 @@ local function AttachTooltip(element, text, opts)
                 pcall(function() t:Destroy() end)
             end)
         end
-    end)
-end
-
--- ============================================================
--- UI Sounds (pooled)
--- ============================================================
-local soundPool = {}
-local SOUND_IDS = {
-    click = "rbxasset://sounds/electronicpingshort.wav",
-    hover = "rbxasset://sounds/switch.wav",
-}
-
-local function PlayUISound(kind)
-    local id = SOUND_IDS[kind]
-    if not id then return end
-
-    -- [IMPROVEMENT] Pool the sounds instead of creating new ones each time.
-    soundPool[kind] = soundPool[kind] or {}
-    local pool = soundPool[kind]
-
-    local s
-    for _, sound in ipairs(pool) do
-        if not sound.Playing then s = sound break end
-    end
-
-    if not s then
-        if #pool >= 4 then return end -- Don't create too many
-        s = Instance.new("Sound")
-        s.SoundId = id
-        s.Volume = (kind == "click") and 0.15 or 0.07
-        s.Parent = SoundService
-        table.insert(pool, s)
-    end
-
-    pcall(function() s:Play() end)
-end
-
-local function AttachHoverSound(element)
-    local last = 0
-    element.MouseEnter:Connect(function()
-        local now = tick()
-        if now - last < 0.12 then return end
-        last = now
-        PlayUISound("hover")
     end)
 end
