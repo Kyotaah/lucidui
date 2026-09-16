@@ -1178,8 +1178,20 @@ function LucidUI.Window:_buildSavedThemesSettings()
 
     BindTap(savedHeader, function()
         savedExpanded = not savedExpanded
-        rebuildSaved()
-        Tween(savedArrow, 0.2, { Rotation = savedExpanded and 180 or 0 }):Play()
+
+        if savedExpanded then
+            rebuildSaved()
+            Tween(savedArrow, 0.2, { Rotation = 180 }):Play()
+        else
+            -- Explicitly collapse the panel
+            Tween(savedList, 0.22, {
+                Size = UDim2.new(1, -20, 0, 0),
+            }, Enum.EasingStyle.Quart):Play()
+            Tween(savedRow, 0.22, {
+                Size = UDim2.new(1, 0, 0, 40),
+            }, Enum.EasingStyle.Quart):Play()
+            Tween(savedArrow, 0.2, { Rotation = 0 }):Play()
+        end
     end)
 
     self:_registerTheme(function(t)
