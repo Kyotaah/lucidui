@@ -370,14 +370,12 @@ end)
 
     W._gripFrames = { grip1, grip2 }
 
-    resizeHandle.InputBegan:Connect(function(input)
-        if not isPrimaryPointer(input) then return end
-        if gesture.input then return end
-        gesture.input     = input
-        gesture.mode      = "resize"
-        gesture.startPos  = input.Position
-        gesture.startSize = { X = W._width, Y = W._height }
-    end)
+resizeHandle.InputBegan:Connect(function(input)
+    if not isPrimaryPointer(input) then return end
+    if gesture.input then return end
+    if W._docked then return end
+    gesture.input     = input
+    gesture.mode      = "resize"
 
     table.insert(W._conns, UserInputService.InputChanged:Connect(function(input)
         if input ~= gesture.input then return end
@@ -647,6 +645,7 @@ end))
         Tween(W.Main, 0.40, { BackgroundTransparency = W.Theme.BackgroundTrans }):Play()
     end
 
+    if W._initDocking then W:_initDocking(config) end
     if config.IntroEnabled ~= false and type(LucidUI.ShowIntro) == "function" then
         LucidUI:ShowIntro({
             Title       = config.IntroTitle or W.Name,
