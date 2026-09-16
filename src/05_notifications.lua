@@ -5,13 +5,12 @@
       • Slides in from the right with a scale entrance
       • Has a colored accent bar on the left that adapts to text height
       • Auto-dismisses after Duration (default 4s)
-      • Shows a progress bar for time remaining
       • Can be clicked to dismiss early
       • Auto-icons based on Variant (info / success / warn / error)
 
-    [IMPROVEMENT] Added queue system, variant colors, progress bar,
-    manual dismiss, and safe cleanup. Caps visible notifications
-    at MaxVisible (default 4).
+    [IMPROVEMENT] Queue system, variant colors, manual dismiss.
+    Caps visible notifications at MaxVisible (default 4).
+    Progress bar removed for cleaner look.
 ]]
 
 local MAX_VISIBLE = 4
@@ -199,52 +198,27 @@ function LucidUI:_renderNotification(config)
     })
 
     local msgLbl = Create("TextLabel", {
-    Text = message,
-    Font = Enum.Font.Gotham,
-    TextSize = 12,
-    TextColor3 = theme.TextSecondary,
-    BackgroundTransparency = 1,
-    TextXAlignment = Enum.TextXAlignment.Left,
-    TextYAlignment = Enum.TextYAlignment.Top,
-    TextWrapped = true,
-    Position = UDim2.fromOffset(iconLeft, 32),
-    Size = UDim2.new(1, -(iconLeft + 14), 0, 0),
-    AutomaticSize = Enum.AutomaticSize.Y,
-    Parent = card,
-})
-Create("UIPadding", {
-    PaddingBottom = UDim.new(0, 18),
-    Parent = msgLbl,
-})
+        Text = message,
+        Font = Enum.Font.Gotham,
+        TextSize = 12,
+        TextColor3 = theme.TextSecondary,
+        BackgroundTransparency = 1,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextYAlignment = Enum.TextYAlignment.Top,
+        TextWrapped = true,
+        Position = UDim2.fromOffset(iconLeft, 32),
+        Size = UDim2.new(1, -(iconLeft + 14), 0, 0),
+        AutomaticSize = Enum.AutomaticSize.Y,
+        Parent = card,
+    })
 
     -- Bottom spacer so the card has symmetric padding
     Create("Frame", {
-        Size = UDim2.new(1, 0, 0, 12),
+        Size = UDim2.new(1, 0, 0, 14),
         Position = UDim2.new(0, 0, 1, 0),
         BackgroundTransparency = 1,
         Parent = card,
     })
-
-    -- --------------------------------------------------------
-    -- Progress bar (countdown indicator)
-    -- --------------------------------------------------------
-    local progressTrack = Create("Frame", {
-        Size = UDim2.new(1, -16, 0, 2),
-        Position = UDim2.new(0, 8, 1, -6),
-        BackgroundColor3 = accent,
-        BackgroundTransparency = 0.75,
-        BorderSizePixel = 0,
-        Parent = card,
-    })
-    Corner(1, progressTrack)
-
-    local progressFill = Create("Frame", {
-        Size = UDim2.new(1, 0, 1, 0),
-        BackgroundColor3 = accent,
-        BorderSizePixel = 0,
-        Parent = progressTrack,
-    })
-    Corner(1, progressFill)
 
     -- --------------------------------------------------------
     -- Adapt accent bar to message height
@@ -275,16 +249,6 @@ Create("UIPadding", {
     end)
 
     -- --------------------------------------------------------
-    -- Progress bar animation
-    -- --------------------------------------------------------
-    pcall(function()
-        TweenService:Create(progressFill,
-            TweenInfo.new(duration, Enum.EasingStyle.Linear),
-            { Size = UDim2.new(0, 0, 1, 0) }
-        ):Play()
-    end)
-
-    -- --------------------------------------------------------
     -- Dismiss logic
     -- --------------------------------------------------------
     local dismissed = false
@@ -303,8 +267,6 @@ Create("UIPadding", {
             Tween(titleLbl, 0.20, { TextTransparency = 1 }):Play()
             Tween(msgLbl,   0.20, { TextTransparency = 1 }):Play()
             Tween(bar,      0.25, { BackgroundTransparency = 1 }):Play()
-            Tween(progressTrack, 0.25, { BackgroundTransparency = 1 }):Play()
-            Tween(progressFill,  0.25, { BackgroundTransparency = 1 }):Play()
         end)
 
         task.wait(0.30)
