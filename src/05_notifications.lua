@@ -154,14 +154,16 @@ function LucidUI:_renderNotification(config)
     -- --------------------------------------------------------
     -- Accent bar (height adjusted after layout settles)
     -- --------------------------------------------------------
+
     local bar = Create("Frame", {
-        Size = UDim2.new(0, 3, 0, 20),
-        Position = UDim2.fromOffset(8, 10),
-        BackgroundColor3 = accent,
-        BorderSizePixel = 0,
-        Parent = card,
-    })
-    Corner(2, bar)
+    Size = UDim2.new(0, 3, 0, 20),
+    Position = UDim2.new(0, 8, 0.5, 0), -- Center vertically
+    AnchorPoint = Vector2.new(0, 0.5),  -- Anchor to its own middle
+    BackgroundColor3 = accent,
+    BorderSizePixel = 0,
+    Parent = card,
+})
+Corner(2, bar)
 
     -- --------------------------------------------------------
     -- Icon (optional)
