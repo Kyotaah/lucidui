@@ -383,12 +383,13 @@ end)
         if input ~= gesture.input then return end
 
         if gesture.mode == "drag" then
-            local d = input.Position - gesture.startPos
-            W.Main.Position = UDim2.new(
-                gesture.mainStartPos.X.Scale, gesture.mainStartPos.X.Offset + d.X,
-                gesture.mainStartPos.Y.Scale, gesture.mainStartPos.Y.Offset + d.Y
-            )
-        elseif gesture.mode == "resize" then
+           local d = input.Position - gesture.startPos
+           W.Main.Position = UDim2.new(
+              gesture.mainStartPos.X.Scale, gesture.mainStartPos.X.Offset + d.X,
+              gesture.mainStartPos.Y.Scale, gesture.mainStartPos.Y.Offset + d.Y
+    )
+    if W._onDragTick then W:_onDragTick() end
+elseif gesture.mode == "resize" then
             local d = input.Position - gesture.startPos
             W._width  = math.clamp(gesture.startSize.X + d.X, W._minWidth,  W._maxWidth)
             W._height = math.clamp(gesture.startSize.Y + d.Y, W._minHeight, W._maxHeight)
@@ -407,18 +408,20 @@ end)
         end
     end))
 
-    table.insert(W._conns, UserInputService.InputEnded:Connect(function(input)
-        if input ~= gesture.input then return end
-        if gesture.mode == "drag" or gesture.mode == "resize" then
-            ClampPosition(W.Main)
-        end
-        gesture.input        = nil
-        gesture.mode         = nil
-        gesture.startPos     = nil
-        gesture.startSize    = nil
-        gesture.mainStartPos = nil
-    end))
-
+table.insert(W._conns, UserInputService.InputEnded:Connect(function(input)
+    if input ~= gesture.input then return end
+    local wasDrag = (gesture.mode == "drag")
+    if gesture.mode == "drag" or gesture.mode == "resize" then
+        ClampPosition(W.Main)
+    end
+    if wasDrag and W._onDragEnd then W:_onDragEnd() end
+    gesture.input        = nil
+    gesture.mode         = nil
+    gesture.startPos     = nil
+    gesture.startSize    = nil
+    gesture.mainStartPos = nil
+end))
+    
     -- ============================================================
     -- Global keybinds
     -- ============================================================
