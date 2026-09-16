@@ -99,16 +99,17 @@ end
 
 -- ── Zone math ─────────────────────────────────────────────────
 function LucidUI.Window:_computeDockZone()
-    local vp   = Camera.ViewportSize
+    local scrW = self.Gui.AbsoluteSize.X
+    local scrH = self.Gui.AbsoluteSize.Y
     local pos  = self.Main.AbsolutePosition
     local size = self.Main.AbsoluteSize
     local thr  = self._dockThreshold
     local topInset = GuiService.TopbarInset.Height
 
     local nearLeft   = pos.X <= thr
-    local nearRight  = pos.X + size.X >= vp.X - thr
+    local nearRight  = pos.X + size.X >= scrW - thr
     local nearTop    = pos.Y <= thr + topInset
-    local nearBottom = pos.Y + size.Y >= vp.Y - thr
+    local nearBottom = pos.Y + size.Y >= scrH - thr
 
     -- Corners take priority — both axes must be near an edge.
     if nearTop and nearLeft     then return "top-left"     end
@@ -125,23 +126,31 @@ function LucidUI.Window:_computeDockZone()
 end
 
 function LucidUI.Window:_dockRect(zone)
-    local vp = Camera.ViewportSize
+    local scrW = self.Gui.AbsoluteSize.X
+    local scrH = self.Gui.AbsoluteSize.Y
     local m  = self._dockMargin
     local topInset = GuiService.TopbarInset.Height
-    local topY = m + topInset
+    
+    -- Safe area boundaries
+    local safeTop = m + topInset
+    local safeBottom = scrH - m
+    local safeLeft = m
+    local safeRight = scrW - m
 
-    local halfW = (vp.X - m * 3) / 2
-    local halfH = (vp.Y - topY - m * 2) / 2
+    local availW = safeRight - safeLeft
+    local availH = safeBottom - safeTop
+    local halfW  = availW / 2
+    local halfH  = availH / 2
 
     local map = {
-        ["left"]         = { x = m,                y = topY,             w = halfW, h = vp.Y - topY - m },
-        ["right"]        = { x = vp.X - halfW - m, y = topY,             w = halfW, h = vp.Y - topY - m },
-        ["top"]          = { x = m,                y = topY,             w = vp.X - m * 2, h = halfH },
-        ["bottom"]       = { x = m,                y = vp.Y - halfH - m, w = vp.X - m * 2, h = halfH },
-        ["top-left"]     = { x = m,                y = topY,             w = halfW, h = halfH },
-        ["top-right"]    = { x = vp.X - halfW - m, y = topY,             w = halfW, h = halfH },
-        ["bottom-left"]  = { x = m,                y = vp.Y - halfH - m, w = halfW, h = halfH },
-        ["bottom-right"] = { x = vp.X - halfW - m, y = vp.Y - halfH - m, w = halfW, h = halfH },
+        ["left"]         = { x = safeLeft,              y = safeTop,              w = halfW, h = availH },
+        ["right"]        = { x = safeRight - halfW,     y = safeTop,              w = halfW, h = availH },
+        ["top"]          = { x = safeLeft,              y = safeTop,              w = availW, h = halfH },
+        ["bottom"]       = { x = safeLeft,              y = safeBottom - halfH,   w = availW, h = halfH },
+        ["top-left"]     = { x = safeLeft,              y = safeTop,              w = halfW, h = halfH },
+        ["top-right"]    = { x = safeRight - halfW,     y = safeTop,              w = halfW, h = halfH },
+        ["bottom-left"]  = { x = safeLeft,              y = safeBottom - halfH,   w = halfW, h = halfH },
+        ["bottom-right"] = { x = safeRight - halfW,     y = safeBottom - halfH,   w = halfW, h = halfH },
     }
     return map[zone]
 end
@@ -157,7 +166,7 @@ function LucidUI.Window:_onBeforeDragStart()
 
     if snap then
         self.Main.Size = UDim2.fromOffset(snap.width, snap.height)
-        ClampPosition(self.Main)
+        -- No ClampPosition here! Let the drag take over smoothly.
     end
     if self._undockBtn then self._undockBtn.Visible = false end
 end
@@ -257,9 +266,10 @@ function LucidUI.Window:Undock(instant)
         or  TweenInfo.new(self._dockSnapTime, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
 
     -- Restore to center of screen at canonical size
-    local vp = Camera.ViewportSize
-    local targetX = math.max((vp.X - snap.width) / 2, 0)
-    local targetY = math.max((vp.Y - snap.height) / 2, 0)
+    local scrW = self.Gui.AbsoluteSize.X
+    local scrH = self.Gui.AbsoluteSize.Y
+    local targetX = math.max((scrW - snap.width) / 2, 0)
+    local targetY = math.max((scrH - snap.height) / 2, 0)
 
     TweenService:Create(self.Main, info, {
         Size     = UDim2.fromOffset(snap.width, snap.height),
