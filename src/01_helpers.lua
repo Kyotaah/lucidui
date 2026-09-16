@@ -154,22 +154,6 @@ local function ApplyGlass(frame, theme, opts)
     Corner(radius, frame)
     Stroke(theme.Border, 1, math.min((theme.BorderTrans or 0.85) + 0.05, 1), frame)
 
-    -- [IMPROVEMENT] Soft drop shadow (opt-in). Rendered as a slightly
-    -- offset dark frame behind the main one.
-    if shadow then
-        local shadowFrame = Create("Frame", {
-            Name = "GlassShadow",
-            Size = UDim2.new(1, 4, 1, 4),
-            Position = UDim2.fromOffset(-2, 2),
-            BackgroundColor3 = Color3.fromRGB(0, 0, 0),
-            BackgroundTransparency = 0.75,
-            BorderSizePixel = 0,
-            ZIndex = -1,
-            Parent = frame.Parent,
-        })
-        Corner(radius, shadowFrame)
-    end
-
     -- Top-edge highlight
     local topHighlight = Create("Frame", {
         Name = "GlassTopHighlight",
