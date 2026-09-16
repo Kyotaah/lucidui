@@ -156,7 +156,7 @@ function LucidUI:_renderNotification(config)
     -- --------------------------------------------------------
 
 local bar = Create("Frame", {
-    Size = UDim2.new(0, 3, 0, 28),  -- fixed height
+    Size = UDim2.new(0, 3, 0, 22),  -- fixed height
     Position = UDim2.new(0, 8, 0.5, 0),
     AnchorPoint = Vector2.new(0, 0.5),
     BackgroundColor3 = accent,
@@ -222,16 +222,6 @@ Corner(2, bar)
         Parent = card,
     })
 
-    -- --------------------------------------------------------
-    -- Adapt accent bar to message height
-    -- --------------------------------------------------------
-    task.spawn(function()
-        for _ = 1, 20 do
-            if not card.Parent then return end
-            bar.Size = UDim2.new(0, 3, 0, 18 + 2 + msgLbl.AbsoluteSize.Y)
-            task.wait(0.1)
-        end
-    end)
 
     -- --------------------------------------------------------
     -- Track this card
