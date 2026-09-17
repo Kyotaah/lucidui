@@ -235,7 +235,8 @@ local function buildHud()
     frame.BorderSizePixel = 0
     frame.Size = UDim2.fromOffset(180, 0)
     frame.AutomaticSize = Enum.AutomaticSize.Y
-    frame.Position = UDim2.fromOffset(16, 16)
+    frame.AnchorPoint = Vector2.new(0, 1)              -- anchor at bottom
+    frame.Position = UDim2.new(0, 16, 1, -16)          -- bottom-left, 16px margins
     frame.Parent = gui
 
     local c = Instance.new("UICorner")
