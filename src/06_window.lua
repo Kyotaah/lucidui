@@ -318,19 +318,13 @@ function LucidUI:CreateWindow(config)
 W.Header.InputBegan:Connect(function(input)
     if not isPrimaryPointer(input) then return end
     if gesture.input then return end
-    
-    -- NEW: Ignore drag if the click started on the minimize or close buttons
-    if input.Target == minBtn or minBtn:IsAncestorOf(input.Target) 
-    or input.Target == closeBtn or closeBtn:IsAncestorOf(input.Target) then 
-        return 
-    end
-
     if W._onBeforeDragStart then W:_onBeforeDragStart() end
     gesture.input        = input
     gesture.mode         = "drag"
     gesture.startPos     = input.Position
     gesture.mainStartPos = W.Main.Position
 end)
+    
     -- [IMPROVEMENT] 44x44 hitbox for mobile friendliness
     local resizeHandle = Create("TextButton", {
         Text = "",
