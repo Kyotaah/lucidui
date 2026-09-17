@@ -5,10 +5,9 @@
     Added search to Dropdown. Added Loading state to Button.
     All callbacks wrapped in Compat.safeCallback. All elements now
     have Get/Set methods.
-]]
+]]--
 
-
---getgenv().LucidUI = getgenv().LucidUI or {}
+getgenv().LucidUI = getgenv().LucidUI or {}
 LucidUI = getgenv().LucidUI
 
 LucidUI._version = "0.10.0"
@@ -27,7 +26,8 @@ function LucidUI:OnCleanup(fn)
     LucidUI._cleanupCallbacks = LucidUI._cleanupCallbacks or {}
     table.insert(LucidUI._cleanupCallbacks, fn)
 end
-============================================================
+
+-- ============================================================
 -- Button
 -- ============================================================
 function LucidUI.Section:CreateButton(config)
