@@ -31,11 +31,12 @@ local function PlayUISound(kind)
     if not s then
         if #pool >= 4 then return end
         s = Instance.new("Sound")
-        s.SoundId = id
         s.Volume = (kind == "click") and 0.15 or 0.07
         s.Parent = SoundService
         table.insert(pool, s)
     end
+
+    s.SoundId = id  -- reapply every call so sound packs work on pooled sounds
 
     pcall(function() s:Play() end)
 end
