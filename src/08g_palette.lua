@@ -1,12 +1,8 @@
 --[[
     Command Palette — search every element across every tab.
 
-    Desktop: Ctrl+K opens the palette anywhere.
-    Mobile:  Tap the search icon in the window header.
-
-    Type to filter. Click or press Enter to jump to the element —
-    the window switches to its tab, scrolls to it, and flashes a
-    brief highlight.
+    Desktop: Ctrl+K or Ctrl+P opens the palette.
+    Mobile:  Tap the magnifier icon next to the window title.
 
     Cleanup: keyboard listener and any open palette are torn down
     on re-execution.
@@ -14,19 +10,16 @@
 
 -- ============================================================
 -- Registry
--- Every element created via Section:_track gets registered here.
 -- ============================================================
 local Registry = {}
 
 local function extractName(frame)
     if not frame then return "" end
-    -- First TextLabel with non-empty text is usually the name
     for _, d in ipairs(frame:GetDescendants()) do
         if d:IsA("TextLabel") and d.Text and d.Text ~= "" then
             return d.Text
         end
     end
-    -- Fallback: TextButton text
     for _, d in ipairs(frame:GetDescendants()) do
         if d:IsA("TextButton") and d.Text and d.Text ~= "" then
             return d.Text
@@ -49,7 +42,6 @@ local function registerElement(section, frame, win)
     })
 end
 
--- Hook Section._track
 local _origTrack = LucidUI.Section._track
 function LucidUI.Section:_track(frame)
     local result = _origTrack(self, frame)
@@ -61,11 +53,10 @@ end
 -- Palette state
 -- ============================================================
 local Palette = {
-    gui       = nil,
-    isOpen    = false,
-    results   = {},
-    selected  = 0,
-    resultRow = nil,
+    gui    = nil,
+    ui     = nil,
+    isOpen = false,
+    results = {},
 }
 
 local MAX_RESULTS = 20
@@ -126,17 +117,14 @@ local function jumpTo(entry)
     local win = entry.win
     if not win then return end
 
-    -- Switch tab if needed
     if entry.tabObj and win.ActiveTab ~= entry.tabObj then
         win:SelectTab(entry.tabObj)
     end
 
-    -- Wait a frame for tab layout
     task.wait(0.05)
 
     local page = entry.tabObj and entry.tabObj.Page
     if page then
-        -- Compute scroll offset by walking siblings
         local offset = 0
         for _, c in ipairs(page:GetChildren()) do
             if c == entry.frame or c:IsAncestorOf(entry.frame) then break end
@@ -158,10 +146,13 @@ end
 local function buildPalette(gui)
     local screenW = gui.AbsoluteSize.X
     local screenH = gui.AbsoluteSize.Y
-    local isMobile = screenW < 600
 
-    local panelW = isMobile and math.min(screenW - 24, 460) or 500
-    local panelH = isMobile and math.min(screenH - 100, 420) or 420
+    -- Compact sizing for phones (mobile viewport is short in landscape)
+    local compact = screenH < 500
+    local panelW = compact and math.min(screenW - 32, 380)
+                         or math.min(screenW - 80, 460)
+    local panelH = compact and math.min(screenH - 60, 300)
+                         or math.min(screenH - 140, 380)
 
     -- Backdrop
     local backdrop = Create("TextButton", {
@@ -190,39 +181,59 @@ local function buildPalette(gui)
         Parent = gui,
     })
     Corner(14, panel)
-    local panelStroke = Stroke(Color3.fromRGB(80, 80, 100), 1, 0.4, panel)
+    Stroke(Color3.fromRGB(80, 80, 100), 1, 0.4, panel)
 
     -- Search bar
     local searchBar = Create("Frame", {
-        Size = UDim2.new(1, 0, 0, 52),
+        Size = UDim2.new(1, 0, 0, 46),
         BackgroundTransparency = 1,
         ZIndex = 3,
         Parent = panel,
     })
 
+    -- Magnifier icon drawn from basic frames
     local iconHolder = Create("Frame", {
         Size = UDim2.fromOffset(18, 18),
-        Position = UDim2.fromOffset(20, 17),
+        Position = UDim2.fromOffset(16, 14),
         BackgroundTransparency = 1,
         ZIndex = 4,
         Parent = searchBar,
     })
-    if LucidUI.IconBuilders and LucidUI.IconBuilders.search then
-        pcall(LucidUI.IconBuilders.search, iconHolder, 18, Color3.fromRGB(150, 150, 170))
-    end
+    local lens = Create("Frame", {
+        Size = UDim2.fromOffset(12, 12),
+        Position = UDim2.fromOffset(0, 0),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        ZIndex = 4,
+        Parent = iconHolder,
+    })
+    Corner(999, lens)
+    Stroke(Color3.fromRGB(150, 150, 170), 1.5, 0.2, lens)
+
+    local lensHandle = Create("Frame", {
+        Size = UDim2.fromOffset(6, 2),
+        Position = UDim2.fromOffset(10, 11),
+        AnchorPoint = Vector2.new(0, 0.5),
+        Rotation = 45,
+        BackgroundColor3 = Color3.fromRGB(150, 150, 170),
+        BorderSizePixel = 0,
+        ZIndex = 4,
+        Parent = iconHolder,
+    })
+    Corner(1, lensHandle)
 
     local input = Create("TextBox", {
         Text = "",
         PlaceholderText = "Search elements…",
         PlaceholderColor3 = Color3.fromRGB(130, 130, 150),
         Font = Enum.Font.Gotham,
-        TextSize = 15,
+        TextSize = 14,
         TextColor3 = Color3.fromRGB(240, 240, 250),
         BackgroundTransparency = 1,
         ClearTextOnFocus = false,
         TextXAlignment = Enum.TextXAlignment.Left,
-        Position = UDim2.fromOffset(50, 0),
-        Size = UDim2.new(1, -90, 1, 0),
+        Position = UDim2.fromOffset(42, 0),
+        Size = UDim2.new(1, -82, 1, 0),
         ZIndex = 4,
         Parent = searchBar,
     })
@@ -234,8 +245,8 @@ local function buildPalette(gui)
         TextColor3 = Color3.fromRGB(150, 150, 170),
         BackgroundTransparency = 1,
         AutoButtonColor = false,
-        Size = UDim2.fromOffset(40, 52),
-        Position = UDim2.new(1, -40, 0, 0),
+        Size = UDim2.fromOffset(36, 46),
+        Position = UDim2.new(1, -36, 0, 0),
         ZIndex = 4,
         Parent = searchBar,
     })
@@ -249,7 +260,7 @@ local function buildPalette(gui)
     -- Divider
     Create("Frame", {
         Size = UDim2.new(1, 0, 0, 1),
-        Position = UDim2.fromOffset(0, 52),
+        Position = UDim2.fromOffset(0, 46),
         BackgroundColor3 = Color3.fromRGB(60, 60, 75),
         BackgroundTransparency = 0.5,
         BorderSizePixel = 0,
@@ -259,8 +270,8 @@ local function buildPalette(gui)
 
     -- Results list
     local results = Create("ScrollingFrame", {
-        Size = UDim2.new(1, 0, 1, -52),
-        Position = UDim2.fromOffset(0, 52),
+        Size = UDim2.new(1, 0, 1, -46),
+        Position = UDim2.fromOffset(0, 46),
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
         ScrollBarThickness = 4,
@@ -286,10 +297,9 @@ local function buildPalette(gui)
 
     return {
         backdrop = backdrop,
-        panel = panel,
-        panelStroke = panelStroke,
-        input = input,
-        results = results,
+        panel    = panel,
+        input    = input,
+        results  = results,
         closeBtn = closeBtn,
     }
 end
@@ -334,7 +344,7 @@ local function renderResults(ui, list)
         })
         Corner(8, row)
 
-        local nameLabel = Create("TextLabel", {
+        Create("TextLabel", {
             Text = entry.name,
             Font = Enum.Font.GothamMedium,
             TextSize = 13,
@@ -348,7 +358,7 @@ local function renderResults(ui, list)
             Parent = row,
         })
 
-        local pathLabel = Create("TextLabel", {
+        Create("TextLabel", {
             Text = entry.tab .. " › " .. entry.section,
             Font = Enum.Font.Gotham,
             TextSize = 11,
@@ -398,16 +408,13 @@ local function ensurePaletteGui()
     local ui = buildPalette(gui)
     Palette.ui = ui
 
-    -- Search handler
     ui.input:GetPropertyChangedSignal("Text"):Connect(function()
         renderResults(ui, runSearch(ui.input.Text))
     end)
 
-    -- Close handlers
     BindTap(ui.closeBtn, function() LucidUI:ClosePalette() end)
     BindTap(ui.backdrop, function() LucidUI:ClosePalette() end)
 
-    -- Keyboard navigation
     ui.input.FocusLost:Connect(function(enterPressed)
         if enterPressed then
             local list = Palette.results
@@ -437,7 +444,7 @@ function LucidUI:OpenPalette()
 
     TweenService:Create(ui.backdrop, TweenInfo.new(0.2), { BackgroundTransparency = 0.55 }):Play()
     TweenService:Create(ui.panel, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
-        { Position = UDim2.new(0.5, 0, 0, 60) }):Play()
+        { Position = UDim2.new(0.5, 0, 0, 30) }):Play()
 
     ui.input.Text = ""
     renderResults(ui, runSearch(""))
@@ -474,17 +481,18 @@ function LucidUI:TogglePalette()
 end
 
 -- ============================================================
--- Desktop keyboard shortcut: Ctrl+K and Ctrl+P
+-- Desktop keyboard shortcut
 -- ============================================================
 local keyConn = UserInputService.InputBegan:Connect(function(input, processed)
     if processed then return end
     if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
 
-    if input.KeyCode == Enum.KeyCode.K
-       and UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
+    local ctrlDown = UserInputService:IsKeyDown(Enum.KeyCode.LeftControl)
+                  or UserInputService:IsKeyDown(Enum.KeyCode.RightControl)
+
+    if ctrlDown and input.KeyCode == Enum.KeyCode.K then
         LucidUI:TogglePalette()
-    elseif input.KeyCode == Enum.KeyCode.P
-       and UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
+    elseif ctrlDown and input.KeyCode == Enum.KeyCode.P then
         LucidUI:TogglePalette()
     elseif input.KeyCode == Enum.KeyCode.Escape and Palette.isOpen then
         LucidUI:ClosePalette()
@@ -492,65 +500,80 @@ local keyConn = UserInputService.InputBegan:Connect(function(input, processed)
 end)
 
 -- ============================================================
--- Header search icon
+-- Header search icon — placed right after the title text
 -- ============================================================
 local _origCreateWindow = LucidUI.CreateWindow
 function LucidUI:CreateWindow(config)
     local W = _origCreateWindow(self, config)
 
-    -- Place the icon to the left of the gear
+    -- Measure the title text to position the icon right after it
+    local titleWidth = TextService:GetTextSize(
+        W.Name or "LucidUI",
+        16,
+        Enum.Font.GothamBold,
+        Vector2.new(2000, 44)
+    ).X
+
+    -- Title starts at x=18. Add title width + a small gap.
+    local iconX = 18 + titleWidth + 10
+
     local searchBtn = Create("TextButton", {
         Name = "PaletteButton",
         Text = "",
         BackgroundTransparency = 1,
-        Size = UDim2.fromOffset(36, 36),
-        Position = UDim2.new(1, -80, 0.5, -18),
-        ZIndex = 3,
+        Size = UDim2.fromOffset(28, 28),
+        Position = UDim2.new(0, iconX, 0.5, -14),
+        ZIndex = 4,
         Parent = W.Header,
     })
 
+    -- Magnifier icon drawn from basic frames (smaller: 15x15)
     local iconHolder = Create("Frame", {
-        Size = UDim2.fromOffset(16, 16),
+        Size = UDim2.fromOffset(15, 15),
         Position = UDim2.fromScale(0.5, 0.5),
         AnchorPoint = Vector2.new(0.5, 0.5),
         BackgroundTransparency = 1,
+        ZIndex = 4,
         Parent = searchBtn,
     })
 
-    local iconStroke
-    if LucidUI.IconBuilders and LucidUI.IconBuilders.search then
-        local ok, _, strokes = pcall(LucidUI.IconBuilders.search, iconHolder, 16, W.Theme.TextSecondary)
-        if ok and strokes then iconStroke = strokes end
-    end
+    local lens = Create("Frame", {
+        Size = UDim2.fromOffset(10, 10),
+        Position = UDim2.fromOffset(0, 0),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        ZIndex = 4,
+        Parent = iconHolder,
+    })
+    Corner(999, lens)
+    local lensStroke = Stroke(W.Theme.TextSecondary, 1.4, 0.15, lens)
+
+    local lensHandle = Create("Frame", {
+        Size = UDim2.fromOffset(5, 1.6),
+        Position = UDim2.fromOffset(8, 9),
+        AnchorPoint = Vector2.new(0, 0.5),
+        Rotation = 45,
+        BackgroundColor3 = W.Theme.TextSecondary,
+        BorderSizePixel = 0,
+        ZIndex = 4,
+        Parent = iconHolder,
+    })
+    Corner(1, lensHandle)
 
     BindTap(searchBtn, function() self:OpenPalette() end)
 
     searchBtn.MouseEnter:Connect(function()
-        pcall(function()
-            if iconStroke then
-                for _, s in ipairs(iconStroke) do
-                    TweenService:Create(s, TweenInfo.new(0.15), { Color = W.Theme.Accent }):Play()
-                end
-            end
-        end)
+        lensStroke.Color = W.Theme.Accent
+        lensHandle.BackgroundColor3 = W.Theme.Accent
     end)
     searchBtn.MouseLeave:Connect(function()
-        pcall(function()
-            if iconStroke then
-                for _, s in ipairs(iconStroke) do
-                    TweenService:Create(s, TweenInfo.new(0.15), { Color = W.Theme.TextSecondary }):Play()
-                end
-            end
-        end)
+        lensStroke.Color = W.Theme.TextSecondary
+        lensHandle.BackgroundColor3 = W.Theme.TextSecondary
     end)
 
-    -- Recolor on theme change
     W:_registerTheme(function(t)
-        if iconStroke then
-            for _, s in ipairs(iconStroke) do
-                s.Color = t.TextSecondary
-            end
-        end
+        lensStroke.Color = t.TextSecondary
+        lensHandle.BackgroundColor3 = t.TextSecondary
     end)
 
     return W
