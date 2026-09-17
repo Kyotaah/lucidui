@@ -511,18 +511,18 @@ function LucidUI:CreateWindow(config)
         Text = "",
         BackgroundTransparency = 1,
         Size = UDim2.fromOffset(28, 28),
-        Position = UDim2.new(0, 0, 0.5, -14), -- Position is set dynamically below
-        ZIndex = 4, -- Keep at 4 since it won't overlap anymore
+        Position = UDim2.new(0, 0, 0.5, -14),
+        ZIndex = 2, -- CHANGED TO 2: Ensures it never blocks the red/orange dots
         Parent = W.Header,
     })
 
-    -- Magnifier icon drawn from basic frames (smaller: 15x15)
+    -- Magnifier icon drawn from basic frames
     local iconHolder = Create("Frame", {
         Size = UDim2.fromOffset(15, 15),
         Position = UDim2.fromScale(0.5, 0.5),
         AnchorPoint = Vector2.new(0.5, 0.5),
         BackgroundTransparency = 1,
-        ZIndex = 4,
+        ZIndex = 2, -- CHANGED TO 2
         Parent = searchBtn,
     })
 
@@ -531,7 +531,7 @@ function LucidUI:CreateWindow(config)
         Position = UDim2.fromOffset(0, 0),
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
-        ZIndex = 4,
+        ZIndex = 2, -- CHANGED TO 2
         Parent = iconHolder,
     })
     Corner(999, lens)
@@ -544,7 +544,7 @@ function LucidUI:CreateWindow(config)
         Rotation = 45,
         BackgroundColor3 = W.Theme.TextSecondary,
         BorderSizePixel = 0,
-        ZIndex = 4,
+        ZIndex = 2, -- CHANGED TO 2
         Parent = iconHolder,
     })
     Corner(1, lensHandle)
@@ -569,7 +569,13 @@ function LucidUI:CreateWindow(config)
     -- Dynamic Visibility Logic
     -- ============================================================
     local function updateSearchButtonVisibility()
-        -- Measure the title text
+        -- 1. Instantly hide if the window is minimized
+        if W.Minimized then
+            searchBtn.Visible = false
+            return
+        end
+
+        -- 2. Measure the title text
         local titleWidth = TextService:GetTextSize(
             W.Name or "LucidUI",
             16,
@@ -577,12 +583,11 @@ function LucidUI:CreateWindow(config)
             Vector2.new(2000, 44)
         ).X
 
-        -- Title starts at x=18. Add title width + a small gap.
         local iconX = 18 + titleWidth + 10
         
-        -- The settings button starts at W._width - 120.
-        -- Leave a 10px gap between the search icon and the settings button.
-        local rightControlsStartX = W._width - 120
+        -- 3. Use the ACTUAL current width of the window, not the stored _width
+        local currentWidth = W.Main.Size.X.Offset
+        local rightControlsStartX = currentWidth - 120
         local safeZoneLimit = rightControlsStartX - 10
 
         if (iconX + 28) > safeZoneLimit then
@@ -598,7 +603,7 @@ function LucidUI:CreateWindow(config)
     -- Run once on creation
     updateSearchButtonVisibility()
 
-    -- Recalculate whenever the window size changes (resizing or minimizing)
+    -- Recalculate whenever the window size changes (resizing, minimizing, restoring)
     table.insert(W._conns, W.Main:GetPropertyChangedSignal("Size"):Connect(updateSearchButtonVisibility))
 
     return W
