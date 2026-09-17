@@ -196,7 +196,7 @@ function LucidUI:CreateWindow(config)
     Corner(999, minBtn)
 
     local minDot = Create("TextLabel", {
-        Text = "-",
+        Text = "—",
         Font = Enum.Font.GothamBold,
         TextSize = 12,
         TextColor3 = Color3.fromRGB(140, 90, 0),
@@ -207,7 +207,7 @@ function LucidUI:CreateWindow(config)
         Parent = minBtn,
     })
 
-    BindTap(minBtn, function() W:SetMinimized(not W.Minimized) end, { MoveThreshold = 8 })
+    BindTap(minBtn, function() W:SetMinimized(not W.Minimized) end, { MoveThreshold = 10 })
 
     minBtn.MouseEnter:Connect(function()
         Tween(minBtn, 0.15, { BackgroundColor3 = Color3.fromRGB(255, 214, 100) }):Play()
@@ -231,7 +231,7 @@ function LucidUI:CreateWindow(config)
     Corner(999, closeBtn)
 
     local closeDot = Create("TextLabel", {
-        Text = "x",
+        Text = "X",
         Font = Enum.Font.GothamBold,
         TextSize = 12,
         TextColor3 = Color3.fromRGB(120, 20, 20),
@@ -248,7 +248,7 @@ function LucidUI:CreateWindow(config)
         else
             W:MinimizeToPill()
         end
-    end, { MoveThreshold = 8 })
+    end, { MoveThreshold = 10 })
 
     closeBtn.MouseEnter:Connect(function()
         Tween(closeBtn, 0.15, { BackgroundColor3 = Color3.fromRGB(255, 130, 120) }):Play()
