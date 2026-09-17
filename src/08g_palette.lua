@@ -506,24 +506,13 @@ local _origCreateWindow = LucidUI.CreateWindow
 function LucidUI:CreateWindow(config)
     local W = _origCreateWindow(self, config)
 
-    -- Measure the title text to position the icon right after it
-    local titleWidth = TextService:GetTextSize(
-        W.Name or "LucidUI",
-        16,
-        Enum.Font.GothamBold,
-        Vector2.new(2000, 44)
-    ).X
-
-    -- Title starts at x=18. Add title width + a small gap.
-    local iconX = 18 + titleWidth + 10
-
     local searchBtn = Create("TextButton", {
         Name = "PaletteButton",
         Text = "",
         BackgroundTransparency = 1,
         Size = UDim2.fromOffset(28, 28),
-        Position = UDim2.new(0, iconX, 0.5, -14),
-        ZIndex = 4,
+        Position = UDim2.new(0, 0, 0.5, -14), -- Position is set dynamically below
+        ZIndex = 4, -- Keep at 4 since it won't overlap anymore
         Parent = W.Header,
     })
 
@@ -575,6 +564,42 @@ function LucidUI:CreateWindow(config)
         lensStroke.Color = t.TextSecondary
         lensHandle.BackgroundColor3 = t.TextSecondary
     end)
+
+    -- ============================================================
+    -- Dynamic Visibility Logic
+    -- ============================================================
+    local function updateSearchButtonVisibility()
+        -- Measure the title text
+        local titleWidth = TextService:GetTextSize(
+            W.Name or "LucidUI",
+            16,
+            Enum.Font.GothamBold,
+            Vector2.new(2000, 44)
+        ).X
+
+        -- Title starts at x=18. Add title width + a small gap.
+        local iconX = 18 + titleWidth + 10
+        
+        -- The settings button starts at W._width - 120.
+        -- Leave a 10px gap between the search icon and the settings button.
+        local rightControlsStartX = W._width - 120
+        local safeZoneLimit = rightControlsStartX - 10
+
+        if (iconX + 28) > safeZoneLimit then
+            -- Not enough space: hide the search button
+            searchBtn.Visible = false
+        else
+            -- Enough space: show it and position it
+            searchBtn.Visible = true
+            searchBtn.Position = UDim2.new(0, iconX, 0.5, -14)
+        end
+    end
+
+    -- Run once on creation
+    updateSearchButtonVisibility()
+
+    -- Recalculate whenever the window size changes (resizing or minimizing)
+    table.insert(W._conns, W.Main:GetPropertyChangedSignal("Size"):Connect(updateSearchButtonVisibility))
 
     return W
 end
