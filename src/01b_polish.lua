@@ -239,31 +239,6 @@ local function AttachHoverGlow(element, accent)
     return glow
 end
 
--- ============================================================
--- Public Sound API
--- ============================================================
-function LucidUI:SetSoundPack(name)
-    if not SOUND_PACKS[name] then
-        warn("[LucidUI] Unknown sound pack: " .. tostring(name))
-        return false
-    end
-    currentPack = name
-    LucidUI._currentSoundPack = name
-    return true
-end
-
-function LucidUI:GetSoundPack()
-    return currentPack
-end
-
-function LucidUI:ListSoundPacks()
-    local list = {}
-    for key, pack in pairs(SOUND_PACKS) do
-        table.insert(list, { key = key, display = pack.display })
-    end
-    table.sort(list, function(a, b) return a.display < b.display end)
-    return list
-end
 
 -- ============================================================
 -- Tooltip
