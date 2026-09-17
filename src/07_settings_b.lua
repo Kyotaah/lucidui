@@ -883,6 +883,110 @@ function LucidUI.Window:_buildAboutSettings()
 end
 
 -- ============================================================
+-- Sound Pack Settings
+-- ============================================================
+function LucidUI.Window:_buildSoundSettings()
+    self:_addSettingSection("Sound")
+
+    local row = Create("Frame", {
+        BackgroundColor3 = self.Theme.Surface,
+        BackgroundTransparency = self.Theme.SurfaceTrans,
+        Size = UDim2.new(1, 0, 0, 44),
+        ClipsDescendants = true,
+    })
+    Corner(10, row)
+    self:_addSettingFrame(row)
+
+    local headerBtn = Create("TextButton", {
+        Text = "", BackgroundTransparency = 1,
+        Size = UDim2.new(1, 0, 0, 44), Parent = row,
+    })
+    Create("TextLabel", {
+        Text = "Sound Pack", Font = Enum.Font.GothamMedium, TextSize = 14,
+        TextColor3 = self.Theme.TextPrimary, BackgroundTransparency = 1,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Position = UDim2.fromOffset(14, 0), Size = UDim2.new(1, -100, 1, 0),
+        Parent = headerBtn,
+    })
+    local valueLbl = Create("TextLabel", {
+        Text = LucidUI:GetSoundPack(), Font = Enum.Font.GothamMedium, TextSize = 13,
+        TextColor3 = self.Theme.Accent, BackgroundTransparency = 1,
+        TextXAlignment = Enum.TextXAlignment.Right,
+        Size = UDim2.new(1, -40, 1, 0), Parent = headerBtn,
+    })
+    local arrowLbl = Create("TextLabel", {
+        Text = "v", Font = Enum.Font.GothamBold, TextSize = 14,
+        TextColor3 = self.Theme.TextMuted, BackgroundTransparency = 1,
+        Position = UDim2.new(1, -24, 0, 0), Size = UDim2.fromOffset(20, 44),
+        Parent = headerBtn,
+    })
+
+    local list = Create("Frame", {
+        Size = UDim2.new(1, -20, 0, 0), Position = UDim2.fromOffset(10, 44),
+        BackgroundTransparency = 1, ClipsDescendants = true, Parent = row,
+    })
+    Create("UIListLayout", {
+        Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder, Parent = list,
+    })
+
+    local expanded = false
+    local optionBtns = {}
+
+    local packs = LucidUI:ListSoundPacks()
+
+    for i, pack in ipairs(packs) do
+        local opt = Create("TextButton", {
+            Text = pack.display, Font = Enum.Font.GothamMedium, TextSize = 13,
+            TextColor3 = self.Theme.TextPrimary, BackgroundColor3 = self.Theme.Background,
+            BackgroundTransparency = 0.5, AutoButtonColor = false,
+            Size = UDim2.new(1, 0, 0, 32), LayoutOrder = i, Parent = list,
+        })
+        Corner(8, opt)
+
+        opt.MouseEnter:Connect(function()
+            local t = self.Theme
+            Tween(opt, 0.12, { BackgroundColor3 = t.Accent, BackgroundTransparency = 0.3 }):Play()
+        end)
+        opt.MouseLeave:Connect(function()
+            local t = self.Theme
+            Tween(opt, 0.12, { BackgroundColor3 = t.Background, BackgroundTransparency = 0.5 }):Play()
+        end)
+
+        local packKey = pack.key
+        local packName = pack.display
+        BindTap(opt, function()
+            LucidUI:SetSoundPack(packKey)
+            valueLbl.Text = packName
+            expanded = false
+            Tween(list, 0.22, { Size = UDim2.new(1, -20, 0, 0) }):Play()
+            Tween(row, 0.22, { Size = UDim2.new(1, 0, 0, 44) }):Play()
+            Tween(arrowLbl, 0.2, { Rotation = 0 }):Play()
+            PlayUISound("click")
+        end)
+
+        table.insert(optionBtns, opt)
+    end
+
+    BindTap(headerBtn, function()
+        expanded = not expanded
+        local h = #optionBtns * 36 + 8
+        Tween(list, 0.22, { Size = UDim2.new(1, -20, 0, expanded and h or 0) }, Enum.EasingStyle.Quart):Play()
+        Tween(row, 0.22, { Size = UDim2.new(1, 0, 0, expanded and (44 + h + 8) or 44) }, Enum.EasingStyle.Quart):Play()
+        Tween(arrowLbl, 0.2, { Rotation = expanded and 180 or 0 }):Play()
+    end)
+
+    self:_registerTheme(function(t)
+        row.BackgroundColor3 = t.Surface
+        valueLbl.TextColor3 = t.Accent
+        arrowLbl.TextColor3 = t.TextMuted
+        for _, b in ipairs(optionBtns) do
+            b.BackgroundColor3 = t.Background
+            b.TextColor3 = t.TextPrimary
+        end
+    end)
+end
+
+-- ============================================================
 -- Build the whole panel
 -- ============================================================
 function LucidUI.Window:BuildSettingsPanel()
