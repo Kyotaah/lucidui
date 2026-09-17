@@ -993,6 +993,7 @@ function LucidUI.Window:BuildSettingsPanel()
     if self._settingsBuilt then return end
     self._settingsBuilt = true
     self:_buildPerformanceSettings()
+    self:_buildSoundSettings()       -- <-- ADD THIS LINE
     self:_buildThemeSettings()
     self:_buildCustomThemeSettings()
     self:_buildSavedThemesSettings()
