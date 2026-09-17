@@ -207,7 +207,7 @@ function LucidUI:CreateWindow(config)
         Parent = minBtn,
     })
 
-    BindTap(minBtn, function() W:SetMinimized(not W.Minimized) end, { MoveThreshold = 10 })
+    BindTap(minBtn, function() W:SetMinimized(not W.Minimized) end, { MoveThreshold = 25 })
 
     minBtn.MouseEnter:Connect(function()
         Tween(minBtn, 0.15, { BackgroundColor3 = Color3.fromRGB(255, 214, 100) }):Play()
@@ -248,7 +248,7 @@ function LucidUI:CreateWindow(config)
         else
             W:MinimizeToPill()
         end
-    end, { MoveThreshold = 10 })
+    end, { MoveThreshold = 25 })
 
     closeBtn.MouseEnter:Connect(function()
         Tween(closeBtn, 0.15, { BackgroundColor3 = Color3.fromRGB(255, 130, 120) }):Play()
