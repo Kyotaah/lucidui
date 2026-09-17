@@ -439,6 +439,7 @@ function LucidUI:OpenPalette()
     gui.Enabled = true
 
     local ui = Palette.ui
+    ui.backdrop.Active = true -- Re-enable clicks for the backdrop
     ui.panel.Position = UDim2.new(0.5, 0, 0, -ui.panel.AbsoluteSize.Y)
     ui.backdrop.BackgroundTransparency = 1
 
@@ -462,6 +463,8 @@ function LucidUI:ClosePalette()
 
     local ui = Palette.ui
     if not ui then return end
+
+    ui.backdrop.Active = false -- Instantly stop the backdrop from intercepting clicks
 
     TweenService:Create(ui.backdrop, TweenInfo.new(0.15), { BackgroundTransparency = 1 }):Play()
     TweenService:Create(ui.panel, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
@@ -512,7 +515,7 @@ function LucidUI:CreateWindow(config)
         BackgroundTransparency = 1,
         Size = UDim2.fromOffset(28, 28),
         Position = UDim2.new(0, 0, 0.5, -14),
-        ZIndex = 2, -- CHANGED TO 2: Ensures it never blocks the red/orange dots
+        ZIndex = 2, -- Kept low to ensure it never blocks the red/orange dots
         Parent = W.Header,
     })
 
@@ -522,7 +525,7 @@ function LucidUI:CreateWindow(config)
         Position = UDim2.fromScale(0.5, 0.5),
         AnchorPoint = Vector2.new(0.5, 0.5),
         BackgroundTransparency = 1,
-        ZIndex = 2, -- CHANGED TO 2
+        ZIndex = 2,
         Parent = searchBtn,
     })
 
@@ -531,7 +534,7 @@ function LucidUI:CreateWindow(config)
         Position = UDim2.fromOffset(0, 0),
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
-        ZIndex = 2, -- CHANGED TO 2
+        ZIndex = 2,
         Parent = iconHolder,
     })
     Corner(999, lens)
@@ -544,7 +547,7 @@ function LucidUI:CreateWindow(config)
         Rotation = 45,
         BackgroundColor3 = W.Theme.TextSecondary,
         BorderSizePixel = 0,
-        ZIndex = 2, -- CHANGED TO 2
+        ZIndex = 2,
         Parent = iconHolder,
     })
     Corner(1, lensHandle)
