@@ -183,6 +183,9 @@ function LucidUI:CreateWindow(config)
 
     W._gearRefs = { parts = gearParts, hole = gearHole, ring = gearRing }
 
+    -- ==========================================
+    -- MINIMIZE BUTTON
+    -- ==========================================
     local minBtn = Create("TextButton", {
         Text = "",
         BackgroundColor3 = Color3.fromRGB(255, 189, 46),
@@ -196,7 +199,7 @@ function LucidUI:CreateWindow(config)
     Corner(999, minBtn)
 
     local minDot = Create("TextLabel", {
-        Text = "—",
+        Text = "-",
         Font = Enum.Font.GothamBold,
         TextSize = 12,
         TextColor3 = Color3.fromRGB(140, 90, 0),
@@ -207,7 +210,15 @@ function LucidUI:CreateWindow(config)
         Parent = minBtn,
     })
 
+    local minBtnPressed = false
     BindTap(minBtn, function() W:SetMinimized(not W.Minimized) end, { MoveThreshold = 25 })
+    
+    minBtn.InputBegan:Connect(function(input) 
+        if isPrimaryPointer(input) then minBtnPressed = true end 
+    end)
+    minBtn.InputEnded:Connect(function(input) 
+        if isPrimaryPointer(input) then minBtnPressed = false end 
+    end)
 
     minBtn.MouseEnter:Connect(function()
         Tween(minBtn, 0.15, { BackgroundColor3 = Color3.fromRGB(255, 214, 100) }):Play()
@@ -218,6 +229,9 @@ function LucidUI:CreateWindow(config)
         Tween(minDot, 0.15, { TextTransparency = 1 }):Play()
     end)
 
+    -- ==========================================
+    -- CLOSE BUTTON
+    -- ==========================================
     local closeBtn = Create("TextButton", {
         Text = "",
         BackgroundColor3 = Color3.fromRGB(255, 95, 87),
@@ -231,7 +245,7 @@ function LucidUI:CreateWindow(config)
     Corner(999, closeBtn)
 
     local closeDot = Create("TextLabel", {
-        Text = "X",
+        Text = "x",
         Font = Enum.Font.GothamBold,
         TextSize = 12,
         TextColor3 = Color3.fromRGB(120, 20, 20),
@@ -242,6 +256,7 @@ function LucidUI:CreateWindow(config)
         Parent = closeBtn,
     })
 
+    local closeBtnPressed = false
     BindTap(closeBtn, function()
         if W._closeAction == "destroy" then
             W:Destroy()
@@ -249,6 +264,13 @@ function LucidUI:CreateWindow(config)
             W:MinimizeToPill()
         end
     end, { MoveThreshold = 25 })
+
+    closeBtn.InputBegan:Connect(function(input) 
+        if isPrimaryPointer(input) then closeBtnPressed = true end 
+    end)
+    closeBtn.InputEnded:Connect(function(input) 
+        if isPrimaryPointer(input) then closeBtnPressed = false end 
+    end)
 
     closeBtn.MouseEnter:Connect(function()
         Tween(closeBtn, 0.15, { BackgroundColor3 = Color3.fromRGB(255, 130, 120) }):Play()
@@ -315,16 +337,20 @@ function LucidUI:CreateWindow(config)
         mainStartPos = nil,
     }
 
-W.Header.InputBegan:Connect(function(input)
-    if not isPrimaryPointer(input) then return end
-    if gesture.input then return end
-    if W._onBeforeDragStart then W:_onBeforeDragStart() end
-    gesture.input        = input
-    gesture.mode         = "drag"
-    gesture.startPos     = input.Position
-    gesture.mainStartPos = W.Main.Position
-end)
-    
+    W.Header.InputBegan:Connect(function(input)
+        if not isPrimaryPointer(input) then return end
+        if gesture.input then return end
+        
+        -- NEW: If the user is pressing a button, do not start a drag!
+        if minBtnPressed or closeBtnPressed then return end 
+
+        if W._onBeforeDragStart then W:_onBeforeDragStart() end
+        gesture.input        = input
+        gesture.mode         = "drag"
+        gesture.startPos     = input.Position
+        gesture.mainStartPos = W.Main.Position
+    end)
+
     -- [IMPROVEMENT] 44x44 hitbox for mobile friendliness
     local resizeHandle = Create("TextButton", {
         Text = "",
