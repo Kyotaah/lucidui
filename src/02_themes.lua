@@ -12,12 +12,25 @@
     so missing keys never crash anything.
 ]]
 
-getgenv().LucidUI = {}
+getgenv().LucidUI = getgenv().LucidUI or {}
 LucidUI = getgenv().LucidUI
 
 LucidUI._version = "0.10.0"
-LucidUI._windows = {}
-LucidUI._cleanupCallbacks = {}
+LucidUI._windows = LucidUI._windows or {}
+LucidUI._cleanupCallbacks = LucidUI._cleanupCallbacks or {}
+
+-- ============================================================
+-- Cleanup registration — added here so every 08x feature file
+-- and every user script can call LucidUI:OnCleanup(...).
+-- ============================================================
+function LucidUI:OnCleanup(fn)
+    if type(fn) ~= "function" then
+        warn("[LucidUI] OnCleanup expects a function")
+        return
+    end
+    LucidUI._cleanupCallbacks = LucidUI._cleanupCallbacks or {}
+    table.insert(LucidUI._cleanupCallbacks, fn)
+end
 
 -- ============================================================
 -- Base theme table
