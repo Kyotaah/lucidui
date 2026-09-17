@@ -8,17 +8,41 @@
 ]]
 
 -- ============================================================
--- UI Sounds (MUST come before BindTap)
 -- ============================================================
-local soundPool = {}
-local SOUND_IDS = {
-    click = "rbxasset://sounds/electronicpingshort.wav",
-    hover = "rbxasset://sounds/switch.wav",
+-- Sound Packs
+-- ============================================================
+local SOUND_PACKS = {
+    classic = {
+        display = "Classic",
+        click   = { id = "rbxasset://sounds/electronicpingshort.wav", volume = 0.15 },
+        hover   = { id = "rbxasset://sounds/switch.wav",              volume = 0.07 },
+    },
+    soft = {
+        display = "Soft",
+        click   = { id = "rbxasset://sounds/clickfast.wav",           volume = 0.12 },
+        hover   = { id = "rbxasset://sounds/button.wav",              volume = 0.05 },
+    },
+    mechanical = {
+        display = "Mechanical",
+        click   = { id = "rbxasset://sounds/switch3.wav",             volume = 0.18 },
+        hover   = { id = "rbxasset://sounds/switch.wav",              volume = 0.08 },
+    },
+    silent = {
+        display = "Silent",
+        click   = { id = nil,                                          volume = 0 },
+        hover   = { id = nil,                                          volume = 0 },
+    },
 }
 
+local soundPool = {}
+local currentPack = "classic"
+
 local function PlayUISound(kind)
-    local id = SOUND_IDS[kind]
-    if not id then return end
+    local pack = SOUND_PACKS[currentPack]
+    if not pack then return end
+
+    local entry = pack[kind]
+    if not entry or not entry.id then return end
 
     soundPool[kind] = soundPool[kind] or {}
     local pool = soundPool[kind]
@@ -31,23 +55,13 @@ local function PlayUISound(kind)
     if not s then
         if #pool >= 4 then return end
         s = Instance.new("Sound")
-        s.SoundId = id
-        s.Volume = (kind == "click") and 0.15 or 0.07
         s.Parent = SoundService
         table.insert(pool, s)
     end
 
+    s.SoundId = entry.id
+    s.Volume  = entry.volume
     pcall(function() s:Play() end)
-end
-
-local function AttachHoverSound(element)
-    local last = 0
-    element.MouseEnter:Connect(function()
-        local now = tick()
-        if now - last < 0.12 then return end
-        last = now
-        PlayUISound("hover")
-    end)
 end
 
 -- ============================================================
@@ -311,4 +325,30 @@ local function AttachTooltip(element, text, opts)
             end)
         end
     end)
+end
+
+-- ============================================================
+-- Public Sound API
+-- ============================================================
+function LucidUI:SetSoundPack(name)
+    if not SOUND_PACKS[name] then
+        warn("[LucidUI] Unknown sound pack: " .. tostring(name))
+        return false
+    end
+    currentPack = name
+    LucidUI._currentSoundPack = name
+    return true
+end
+
+function LucidUI:GetSoundPack()
+    return currentPack
+end
+
+function LucidUI:ListSoundPacks()
+    local list = {}
+    for key, pack in pairs(SOUND_PACKS) do
+        table.insert(list, { key = key, display = pack.display })
+    end
+    table.sort(list, function(a, b) return a.display < b.display end)
+    return list
 end
