@@ -521,3 +521,41 @@ end
 -- Also hook Section._track for future elements
 -- ============================================================
 -- (Already overridden above, this comment documents the hook)
+
+-- ============================================================
+-- Cleanup registration — stop the update loop and disconnect
+-- the right-click handler when the library is re-executed.
+-- ============================================================
+LucidUI:OnCleanup(function()
+    -- Stop the update loop FIRST so it doesn't recreate the HUD
+    DevMode.enabled = false
+
+    -- Destroy the HUD ScreenGui
+    if DevMode.hudGui and DevMode.hudGui.Parent then
+        pcall(function() DevMode.hudGui:Destroy() end)
+    end
+    DevMode.hudGui = nil
+    DevMode.hudFrame = nil
+    DevMode.hudLabels = {}
+
+    -- Destroy hover outline/tooltip if they still exist
+    if DevMode.hoverOutline then
+        pcall(function() DevMode.hoverOutline:Destroy() end)
+        DevMode.hoverOutline = nil
+    end
+    if DevMode.hoverTooltip then
+        pcall(function() DevMode.hoverTooltip:Destroy() end)
+        DevMode.hoverTooltip = nil
+    end
+
+    -- Disconnect the right-click handler
+    if DevMode.rightClickConn then
+        pcall(function() DevMode.rightClickConn:Disconnect() end)
+        DevMode.rightClickConn = nil
+    end
+
+    -- Drop the update loop reference
+    DevMode.updateLoop = nil
+
+    print("[LucidUI] DevMode cleaned up")
+end)
