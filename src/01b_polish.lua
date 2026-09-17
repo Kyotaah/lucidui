@@ -11,7 +11,7 @@
 -- ============================================================
 -- Sound Packs
 -- ============================================================
-local SOUND_PACKS = {
+SOUND_PACKS = {
     classic = {
         display = "Classic",
         click   = { id = "rbxasset://sounds/electronicpingshort.wav", volume = 0.15 },
@@ -34,8 +34,8 @@ local SOUND_PACKS = {
     },
 }
 
-local soundPool = {}
-local currentPack = "classic"
+soundPool = {}
+currentPack = "classic"
 
 local function PlayUISound(kind)
     local pack = SOUND_PACKS[currentPack]
