@@ -210,15 +210,7 @@ function LucidUI:CreateWindow(config)
         Parent = minBtn,
     })
 
-    local minBtnPressed = false
     BindTap(minBtn, function() W:SetMinimized(not W.Minimized) end, { MoveThreshold = 25 })
-    
-    minBtn.InputBegan:Connect(function(input) 
-        if isPrimaryPointer(input) then minBtnPressed = true end 
-    end)
-    minBtn.InputEnded:Connect(function(input) 
-        if isPrimaryPointer(input) then minBtnPressed = false end 
-    end)
 
     minBtn.MouseEnter:Connect(function()
         Tween(minBtn, 0.15, { BackgroundColor3 = Color3.fromRGB(255, 214, 100) }):Play()
@@ -256,7 +248,6 @@ function LucidUI:CreateWindow(config)
         Parent = closeBtn,
     })
 
-    local closeBtnPressed = false
     BindTap(closeBtn, function()
         if W._closeAction == "destroy" then
             W:Destroy()
@@ -264,13 +255,6 @@ function LucidUI:CreateWindow(config)
             W:MinimizeToPill()
         end
     end, { MoveThreshold = 25 })
-
-    closeBtn.InputBegan:Connect(function(input) 
-        if isPrimaryPointer(input) then closeBtnPressed = true end 
-    end)
-    closeBtn.InputEnded:Connect(function(input) 
-        if isPrimaryPointer(input) then closeBtnPressed = false end 
-    end)
 
     closeBtn.MouseEnter:Connect(function()
         Tween(closeBtn, 0.15, { BackgroundColor3 = Color3.fromRGB(255, 130, 120) }):Play()
@@ -341,8 +325,14 @@ function LucidUI:CreateWindow(config)
         if not isPrimaryPointer(input) then return end
         if gesture.input then return end
         
-        -- NEW: If the user is pressing a button, do not start a drag!
-        if minBtnPressed or closeBtnPressed then return end 
+        -- CRITICAL FIX: Delay the drag to allow button clicks to register
+        task.wait(0.05)
+        
+        -- If the input was released during the delay, or another gesture started, cancel
+        if gesture.input then return end
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            if not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then return end
+        end
 
         if W._onBeforeDragStart then W:_onBeforeDragStart() end
         gesture.input        = input
