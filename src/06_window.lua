@@ -1,9 +1,5 @@
 --[[
     Window — creates the main window and every layer that sits inside it.
-
-    [IMPROVEMENT] Fixed the missing `end)` bug in the resize handler.
-    Added CloseAction config, Center/GetSize/SetSize methods, larger
-    mobile resize hitbox, and safe pcall wrapping on all tweens.
 ]]
 
 LucidUI.Window = {}
@@ -46,7 +42,7 @@ function LucidUI:CreateWindow(config)
     W.SettingsOpen = false
 
     W.PillKeybind  = config.PillKeybind or Enum.KeyCode.Home
-    W._closeAction = config.CloseAction or "pill" -- "pill" or "destroy"
+    W._closeAction = config.CloseAction or "pill"
 
     W._configData     = {}
     W._elementsByFlag = {}
@@ -328,7 +324,7 @@ function LucidUI:CreateWindow(config)
         -- CRITICAL FIX: Delay the drag to allow button clicks to register
         task.wait(0.05)
         
-        -- If the input was released during the delay, or another gesture started, cancel
+        -- If the input was released during the delay, cancel
         if gesture.input then return end
         if input.UserInputType == Enum.UserInputType.MouseButton1 then
             if not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then return end
@@ -341,7 +337,7 @@ function LucidUI:CreateWindow(config)
         gesture.mainStartPos = W.Main.Position
     end)
 
-    -- [IMPROVEMENT] 44x44 hitbox for mobile friendliness
+    -- 44x44 hitbox for mobile friendliness
     local resizeHandle = Create("TextButton", {
         Text = "",
         BackgroundTransparency = 1,
@@ -376,6 +372,9 @@ function LucidUI:CreateWindow(config)
     Corner(1, grip2)
 
     W._gripFrames = { grip1, grip2 }
+    
+    -- FIX: Store a reference so we can hide it when minimized
+    W._resizeHandle = resizeHandle
 
     resizeHandle.InputBegan:Connect(function(input)
         if not isPrimaryPointer(input) then return end
@@ -712,6 +711,34 @@ function LucidUI.Window:RestoreFromPill()
     if not self.FloatingPill then return end
     self.Floating = false
 
+    -- FIX: If the window was minimized before turning into a pill,
+    -- restore it to its full size instead of a tiny bar.
+    if self.Minimized then
+        self.Minimized = false
+        self.Main.Size = UDim2.fromOffset(self._width, self._height)
+        
+        if not self.SettingsOpen then
+            self.Content.Visible   = true
+            self.Separator.Visible = true
+            self.TabStrip.Visible  = true
+        end
+        
+        if self._settingsBtn then
+            self._settingsBtn.Visible = true
+            if self._gearRefs then
+                for _, p in ipairs(self._gearRefs.parts) do
+                    p.BackgroundTransparency = 0
+                end
+                if self._gearRefs.hole then
+                    self._gearRefs.hole.BackgroundTransparency = 0
+                end
+            end
+        end
+        
+        -- FIX: Re-show the resize handle since we're back to normal size
+        if self._resizeHandle then self._resizeHandle.Visible = true end
+    end
+
     local slide = TweenService:Create(self.FloatingPill, Ease.In(0.26), {
         Position = UDim2.new(0.5, 0, 0, -50),
     })
@@ -819,14 +846,12 @@ function LucidUI.Window:SetVisible(state)
     if self.Gui then self.Gui.Enabled = state end
 end
 
--- [IMPROVEMENT] Center the window on screen
 function LucidUI.Window:Center()
     if not self.Main then return end
     self.Main.Position = UDim2.new(0.5, 0, 0.5, 0)
     self.Main.AnchorPoint = Vector2.new(0.5, 0.5)
 end
 
--- [IMPROVEMENT] Get/Set window size
 function LucidUI.Window:GetSize()
     return self._width, self._height
 end
@@ -849,6 +874,9 @@ function LucidUI.Window:SetMinimized(state)
     local targetHeight = state and collapsedHeight or self._height
 
     if state then
+        -- FIX: Hide the resize handle so it doesn't eat the red dot's clicks
+        if self._resizeHandle then self._resizeHandle.Visible = false end
+        
         if self._gearRefs then
             for _, p in ipairs(self._gearRefs.parts) do
                 TweenService:Create(p, TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
@@ -877,6 +905,9 @@ function LucidUI.Window:SetMinimized(state)
     }):Play()
 
     if not state then
+        -- FIX: Re-show the resize handle when the window is restored
+        if self._resizeHandle then self._resizeHandle.Visible = true end
+        
         task.delay(0.05, function()
             if self._settingsBtn then
                 self._settingsBtn.Visible = true
