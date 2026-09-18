@@ -1,11 +1,5 @@
 --[[
     Command Palette — search every element across every tab.
-
-    Desktop: Ctrl+K or Ctrl+P opens the palette.
-    Mobile:  Tap the magnifier icon next to the window title.
-
-    Cleanup: keyboard listener and any open palette are torn down
-    on re-execution.
 ]]
 
 -- ============================================================
@@ -147,14 +141,12 @@ local function buildPalette(gui)
     local screenW = gui.AbsoluteSize.X
     local screenH = gui.AbsoluteSize.Y
 
-    -- Compact sizing for phones (mobile viewport is short in landscape)
     local compact = screenH < 500
     local panelW = compact and math.min(screenW - 32, 380)
                          or math.min(screenW - 80, 460)
     local panelH = compact and math.min(screenH - 60, 300)
                          or math.min(screenH - 140, 380)
 
-    -- Backdrop
     local backdrop = Create("TextButton", {
         Name = "Backdrop",
         Text = "",
@@ -167,7 +159,6 @@ local function buildPalette(gui)
         Parent = gui,
     })
 
-    -- Panel
     local panel = Create("Frame", {
         Name = "Panel",
         Size = UDim2.fromOffset(panelW, panelH),
@@ -183,7 +174,6 @@ local function buildPalette(gui)
     Corner(14, panel)
     Stroke(Color3.fromRGB(80, 80, 100), 1, 0.4, panel)
 
-    -- Search bar
     local searchBar = Create("Frame", {
         Size = UDim2.new(1, 0, 0, 46),
         BackgroundTransparency = 1,
@@ -191,7 +181,6 @@ local function buildPalette(gui)
         Parent = panel,
     })
 
-    -- Magnifier icon drawn from basic frames
     local iconHolder = Create("Frame", {
         Size = UDim2.fromOffset(18, 18),
         Position = UDim2.fromOffset(16, 14),
@@ -257,7 +246,6 @@ local function buildPalette(gui)
         TweenService:Create(closeBtn, TweenInfo.new(0.15), { TextColor3 = Color3.fromRGB(150, 150, 170) }):Play()
     end)
 
-    -- Divider
     Create("Frame", {
         Size = UDim2.new(1, 0, 0, 1),
         Position = UDim2.fromOffset(0, 46),
@@ -268,7 +256,6 @@ local function buildPalette(gui)
         Parent = panel,
     })
 
-    -- Results list
     local results = Create("ScrollingFrame", {
         Size = UDim2.new(1, 0, 1, -46),
         Position = UDim2.fromOffset(0, 46),
@@ -439,7 +426,7 @@ function LucidUI:OpenPalette()
     gui.Enabled = true
 
     local ui = Palette.ui
-    ui.backdrop.Active = true -- Re-enable clicks for the backdrop
+    ui.backdrop.Active = true
     ui.panel.Position = UDim2.new(0.5, 0, 0, -ui.panel.AbsoluteSize.Y)
     ui.backdrop.BackgroundTransparency = 1
 
@@ -464,7 +451,7 @@ function LucidUI:ClosePalette()
     local ui = Palette.ui
     if not ui then return end
 
-    ui.backdrop.Active = false -- Instantly stop the backdrop from intercepting clicks
+    ui.backdrop.Active = false
 
     TweenService:Create(ui.backdrop, TweenInfo.new(0.15), { BackgroundTransparency = 1 }):Play()
     TweenService:Create(ui.panel, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
@@ -503,7 +490,7 @@ local keyConn = UserInputService.InputBegan:Connect(function(input, processed)
 end)
 
 -- ============================================================
--- Header search icon — placed right after the title text
+-- Header search icon
 -- ============================================================
 local _origCreateWindow = LucidUI.CreateWindow
 function LucidUI:CreateWindow(config)
@@ -515,11 +502,10 @@ function LucidUI:CreateWindow(config)
         BackgroundTransparency = 1,
         Size = UDim2.fromOffset(28, 28),
         Position = UDim2.new(0, 0, 0.5, -14),
-        ZIndex = 2, -- Kept low to ensure it never blocks the red/orange dots
+        ZIndex = 2,
         Parent = W.Header,
     })
 
-    -- Magnifier icon drawn from basic frames
     local iconHolder = Create("Frame", {
         Size = UDim2.fromOffset(15, 15),
         Position = UDim2.fromScale(0.5, 0.5),
@@ -568,17 +554,12 @@ function LucidUI:CreateWindow(config)
         lensHandle.BackgroundColor3 = t.TextSecondary
     end)
 
-    -- ============================================================
-    -- Dynamic Visibility Logic
-    -- ============================================================
     local function updateSearchButtonVisibility()
-        -- 1. Instantly hide if the window is minimized
         if W.Minimized then
             searchBtn.Visible = false
             return
         end
 
-        -- 2. Measure the title text
         local titleWidth = TextService:GetTextSize(
             W.Name or "LucidUI",
             16,
@@ -587,26 +568,19 @@ function LucidUI:CreateWindow(config)
         ).X
 
         local iconX = 18 + titleWidth + 10
-        
-        -- 3. Use the ACTUAL current width of the window, not the stored _width
         local currentWidth = W.Main.Size.X.Offset
         local rightControlsStartX = currentWidth - 120
         local safeZoneLimit = rightControlsStartX - 10
 
         if (iconX + 28) > safeZoneLimit then
-            -- Not enough space: hide the search button
             searchBtn.Visible = false
         else
-            -- Enough space: show it and position it
             searchBtn.Visible = true
             searchBtn.Position = UDim2.new(0, iconX, 0.5, -14)
         end
     end
 
-    -- Run once on creation
     updateSearchButtonVisibility()
-
-    -- Recalculate whenever the window size changes (resizing, minimizing, restoring)
     table.insert(W._conns, W.Main:GetPropertyChangedSignal("Size"):Connect(updateSearchButtonVisibility))
 
     return W
