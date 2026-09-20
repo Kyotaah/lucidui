@@ -195,23 +195,23 @@ function LucidUI:CreateWindow(config)
 end
 
 -- ============================================================
--- Hook CreateTab to make tab buttons fill the sidebar
+-- Hook CreateTab to make tab buttons fill the sidebar.
+-- Fast-path returns immediately when side tabs aren't active,
+-- so the default horizontal layout has zero overhead.
 -- ============================================================
 local _origCreateTab = LucidUI.Window.CreateTab
 function LucidUI.Window:CreateTab(config)
+    if not self._sideTabsMode then
+        return _origCreateTab(self, config)
+    end
+
     local tab = _origCreateTab(self, config)
 
-    if self._sideTabsMode then
-        -- Full-width button, left-aligned label
-        if tab.Button then
-            tab.Button.Size = UDim2.new(1, -8, 0, 36)
-        end
-        if tab.Label then
-            tab.Label.TextXAlignment = Enum.TextXAlignment.Left
-        end
-        if tab.IconParts then
-            -- Icon already positions correctly; nothing to change
-        end
+    if tab.Button then
+        tab.Button.Size = UDim2.new(1, -8, 0, 36)
+    end
+    if tab.Label then
+        tab.Label.TextXAlignment = Enum.TextXAlignment.Left
     end
 
     return tab
