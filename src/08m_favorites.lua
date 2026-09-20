@@ -269,6 +269,11 @@ function LucidUI:CreateWindow(config)
         Parent = starBtn,
     })
 
+        -- [NEW] Tooltip
+    if LucidUI._AttachTooltip then
+        LucidUI._AttachTooltip(starBtn, "Favorites — quick access toggles", { Position = "bottom" })
+    end
+
     -- ── Dropdown panel ────────────────────────────────
     local panel = Create("Frame", {
         Name = "FavoritesPanel",
