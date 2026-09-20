@@ -7,7 +7,9 @@
     match whatever theme is active.
 
     Adds to LucidUI.Section:
-      • CreateProgressBar      — bar with accent strip + shimmer
+      • CreateVoidProgressBar  — accent-styled bar (separate from
+                                 the plain CreateProgressBar in
+                                 09_elements.lua)
       • CreateCardGrid         — grid of selectable image cards
       • CreateFilteredCardGrid — same + group dropdown filter
       • CreateMultiToggle      — list of independent pill toggles
@@ -38,9 +40,24 @@ local function registerTheme(section, fn)
 end
 
 -- ============================================================
--- CreateProgressBar
+-- CreateVoidProgressBar
 -- ============================================================
-function LucidUI.Section:CreateProgressBar(config)
+--[[
+    Void-styled progress bar. Same signature as CreateProgressBar
+    but with the accent-bar + gradient + top-shine treatment.
+
+    Usage:
+        section:CreateVoidProgressBar({
+            Name        = "Loading",
+            Value       = 0,
+            Max         = 1,
+            ShowPercent = true,
+            Flag        = "loading_bar",
+            Callback    = function(value, ratio) end,
+        })
+]]
+
+function LucidUI.Section:CreateVoidProgressBar(config)
     config = config or {}
     local theme = themeOf(self)
 
