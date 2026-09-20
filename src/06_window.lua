@@ -329,15 +329,20 @@ function LucidUI:CreateWindow(config)
     W.Header.InputBegan:Connect(function(input)
         if not isPrimaryPointer(input) then return end
         if gesture.input then return end
-        
-        -- CRITICAL FIX: Delay the drag to allow button clicks to register
+
+        -- Watch for the input ending during the 50ms debounce window.
+        -- Works for both mouse and touch so quick taps don't slip
+        -- through into a phantom drag on mobile.
+        local cancelled = false
+        local cancelConn = UserInputService.InputEnded:Connect(function(ended)
+            if ended == input then cancelled = true end
+        end)
+
         task.wait(0.05)
-        
-        -- If the input was released during the delay, cancel
+
+        if cancelConn then cancelConn:Disconnect() end
+        if cancelled then return end
         if gesture.input then return end
-        if input.UserInputType == Enum.UserInputType.MouseButton1 then
-            if not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then return end
-        end
 
         if W._onBeforeDragStart then W:_onBeforeDragStart() end
         gesture.input        = input
