@@ -1,5 +1,5 @@
 -- ============================================================
--- Module: 08h_pergame_configs.lua
+-- Module: 08k_pergameconfigs.lua
 -- ============================================================
 --[[
     Per-Game Configs — separate config folder per Roblox game,
@@ -19,6 +19,12 @@
         it waits and tries again instead of failing silently
       • Opt-in per window via CreateWindow({ PerGameConfigs = true })
       • Non-destructive: if disabled, falls back to the global system
+
+    [FIX] ClearAutoload now deletes the autoload file rather than
+    writing an empty payload. Falls back to the old behavior if the
+    executor has no delfile. Also tightened configPath's filename
+    sanitizer to strip spaces — some executors' writefile rejects
+    paths containing spaces.
 
     NO tracking. NO network. NO clipboard.
 ]]
@@ -89,8 +95,10 @@ end
 
 local function configPath(name)
     ensurePaths()
-    -- Sanitize file name
-    local safe = tostring(name):gsub("[^%w_%-%s%.]", "_")
+    -- [FIX] Sanitize file name. Previously allowed %s (spaces), which
+    -- some executors' writefile rejects. Now only alphanumerics,
+    -- underscores, hyphens, and dots survive.
+    local safe = tostring(name):gsub("[^%w_%-%.]", "_")
     return CONFIG_DIR .. "/" .. safe .. ".json"
 end
 
@@ -189,18 +197,28 @@ function GC.GetAutoload()
     return readAutoload()
 end
 
+-- [FIX] Previously wrote an empty `{ slot = "" }` payload, which left
+-- a stray autoload.json file sitting on disk forever. Now we delete
+-- the file when the executor supports delfile; only fall back to the
+-- empty-write path when delfile isn't available.
 function GC.ClearAutoload()
+    ensurePaths()
+
+    if type(delfile) == "function" and isfileSafe(AUTOLOAD_FILE) then
+        local ok = pcall(delfile, AUTOLOAD_FILE)
+        if ok then return true end
+        -- fall through to the legacy path on failure
+    end
+
+    -- Fallback: overwrite with an empty payload. readAutoload treats
+    -- slot=="" as nil, so behaviorally equivalent — just leaves a
+    -- harmless stub file behind.
     return saveAutoload(nil)
 end
 
 -- ============================================================
 -- Save / Load window config to per-game slot
 -- ============================================================
---[[
-    These mirror the shape of Window:SaveConfig / LoadConfig but
-    write into the per-game folder instead of the global one.
-]]
-
 function GC.SaveWindow(window, name)
     if not window or not name then return false end
     if not hasFS() then return false end
@@ -324,12 +342,6 @@ end
 -- ============================================================
 -- Auto-load with retry
 -- ============================================================
---[[
-    Called after window creation. Waits for UI to settle, then
-    loads the autoload slot. If any flags are missing, retries
-    with increasing delay up to maxRetries.
-]]
-
 local function attemptAutoload(window, slot, attempt, maxRetries, onDone)
     attempt = attempt or 1
     maxRetries = maxRetries or 8
@@ -454,17 +466,6 @@ end
 -- ============================================================
 -- Optional: settings UI section
 -- ============================================================
---[[
-    If you want a settings UI for the autoload slot, call:
-
-        LucidUI.GameConfigs.BuildSettingsSection(window)
-
-    Which appends a section to the window's settings panel with:
-      • Slot dropdown
-      • Save / Load / Delete buttons
-      • Autoload toggle
-]]
-
 function GC.BuildSettingsSection(window)
     if not window or not window._spContent then return end
 
