@@ -46,6 +46,14 @@ local function clamp(v, lo, hi)
     return v
 end
 
+local function lightenColor(c, amount)
+    return Color3.new(
+        math.min(c.R + amount, 1),
+        math.min(c.G + amount, 1),
+        math.min(c.B + amount, 1)
+    )
+end
+
 local function buildButtonInstance(cfg, parentGui)
     -- Container frame so we can apply hover-scale without fighting
     -- the actual button's position math.
@@ -228,6 +236,7 @@ function LucidUI:CreateFloatingButton(cfg)
     obj.Window   = cfg.Window
     obj._cfg     = cfg
     obj._visible = true
+    obj._conns   = {}
 
     local theme = (cfg.Window and cfg.Window.Theme)
               or LucidUI._lastTheme
@@ -246,7 +255,7 @@ function LucidUI:CreateFloatingButton(cfg)
     -- ============================================================
     btn.MouseEnter:Connect(function()
         Tween(btn, 0.15, {
-            BackgroundColor3 = (cfg.HoverColor or lighten and lighten(accent, 0.15) or accent),
+            BackgroundColor3 = cfg.HoverColor or lightenColor(accent, 0.15),
         }):Play()
         Tween(innerStroke, 0.15, { Transparency = 0.0 }):Play()
         if tipFrame and tipLabel then
@@ -265,7 +274,7 @@ function LucidUI:CreateFloatingButton(cfg)
     end)
     btn.MouseLeave:Connect(function()
         Tween(btn, 0.20, {
-            BackgroundColor3 = cfg.Color or themeOf(self) and theme.Background or Color3.fromRGB(30, 28, 45),
+            BackgroundColor3 = cfg.Color or theme.Background or Color3.fromRGB(30, 28, 45),
         }):Play()
         Tween(innerStroke, 0.20, { Transparency = 0.15 }):Play()
         if tipFrame then
@@ -327,7 +336,7 @@ function LucidUI:CreateFloatingButton(cfg)
                 )
             end
         end)
-        table.insert(obj._conns or {}, dragConn)
+        table.insert(obj._conns, dragConn)
 
         local endConn = UserInputService.InputEnded:Connect(function(input)
             if input ~= dragInput then return end
@@ -366,7 +375,7 @@ function LucidUI:CreateFloatingButton(cfg)
                 if cfg.OnClick then Compat.safeCallback(cfg.OnClick) end
             end
         end)
-        table.insert(obj._conns or {}, endConn)
+        table.insert(obj._conns, endConn)
     else
         -- Non-draggable: simple click
         BindTap(btn, function()
@@ -506,8 +515,6 @@ function LucidUI:CreateFloatingButton(cfg)
             self.Gui = nil
         end
     end
-
-    obj._conns = {}
 
     -- Track for cleanup
     LucidUI._floatingButtons = LucidUI._floatingButtons or {}
