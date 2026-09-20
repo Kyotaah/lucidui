@@ -1,11 +1,14 @@
+-- ============================================================
+-- Module: 06_window.lua
+-- ============================================================
 --[[
     Window — creates the main window and every layer that sits inside it.
+
+    [NEW] Header buttons now have tooltips (Settings, Minimize, Close).
+          Window drag uses rubber-band edge resistance and springs
+          back on release.
 ]]
 
--- Preserve any pre-existing LucidUI.Window table (in case a future
--- module loads before us and patches it). If nothing exists yet,
--- create a fresh empty table. Either way, ensure __index points to
--- itself so methods added later still resolve.
 LucidUI.Window = LucidUI.Window or {}
 LucidUI.Window.__index = LucidUI.Window
 
@@ -85,10 +88,6 @@ function LucidUI:CreateWindow(config)
     W.UIScale = Create("UIScale", { Scale = GetResponsiveScale(), Parent = W.Gui })
 
     do
-        -- Camera can be nil if 01_helpers.lua's lookup timed out or
-        -- if the executor injected before the camera spawned. Fall
-        -- back to workspace.CurrentCamera at call time and skip the
-        -- connection if even that is unavailable.
         local cam = Camera or workspace.CurrentCamera
         if cam then
             table.insert(W._conns, cam:GetPropertyChangedSignal("ViewportSize"):Connect(function()
@@ -152,6 +151,9 @@ function LucidUI:CreateWindow(config)
     )
     local pillWidth = math.clamp(pillTextPx.X + 50, 120, 280)
 
+    -- ==========================================
+    -- SETTINGS BUTTON
+    -- ==========================================
     local settingsBtn = Create("TextButton", {
         Text = "",
         BackgroundTransparency = 1,
@@ -161,6 +163,11 @@ function LucidUI:CreateWindow(config)
         Parent = W.Header,
     })
     W._settingsBtn = settingsBtn
+
+    -- [NEW] Tooltip
+    if LucidUI._AttachTooltip then
+        LucidUI._AttachTooltip(settingsBtn, "Settings", { Position = "bottom" })
+    end
 
     local gearHolder, gearRing, gearParts, gearHole =
         BuildGearIcon(settingsBtn, 18, W.Theme.TextSecondary, W.Theme.Background)
@@ -207,6 +214,11 @@ function LucidUI:CreateWindow(config)
     })
     Corner(999, minBtn)
 
+    -- [NEW] Tooltip
+    if LucidUI._AttachTooltip then
+        LucidUI._AttachTooltip(minBtn, "Minimize to pill", { Position = "bottom" })
+    end
+
     local minDot = Create("TextLabel", {
         Text = "-",
         Font = Enum.Font.GothamBold,
@@ -244,6 +256,11 @@ function LucidUI:CreateWindow(config)
         Parent = W.Header,
     })
     Corner(999, closeBtn)
+
+    -- [NEW] Tooltip
+    if LucidUI._AttachTooltip then
+        LucidUI._AttachTooltip(closeBtn, "Close", { Position = "bottom" })
+    end
 
     local closeDot = Create("TextLabel", {
         Text = "x",
@@ -320,7 +337,7 @@ function LucidUI:CreateWindow(config)
     })
 
     -- ============================================================
-    -- Shared gesture state — header drag and resize
+    -- Shared gesture state
     -- ============================================================
     local gesture = {
         input        = nil,
@@ -334,9 +351,6 @@ function LucidUI:CreateWindow(config)
         if not isPrimaryPointer(input) then return end
         if gesture.input then return end
 
-        -- Watch for the input ending during the 50ms debounce window.
-        -- Works for both mouse and touch so quick taps don't slip
-        -- through into a phantom drag on mobile.
         local cancelled = false
         local cancelConn = UserInputService.InputEnded:Connect(function(ended)
             if ended == input then cancelled = true end
@@ -355,7 +369,6 @@ function LucidUI:CreateWindow(config)
         gesture.mainStartPos = W.Main.Position
     end)
 
-    -- 44x44 hitbox for mobile friendliness
     local resizeHandle = Create("TextButton", {
         Text = "",
         BackgroundTransparency = 1,
@@ -390,8 +403,6 @@ function LucidUI:CreateWindow(config)
     Corner(1, grip2)
 
     W._gripFrames = { grip1, grip2 }
-    
-    -- FIX: Store a reference so we can hide it when minimized
     W._resizeHandle = resizeHandle
 
     resizeHandle.InputBegan:Connect(function(input)
@@ -404,16 +415,32 @@ function LucidUI:CreateWindow(config)
         gesture.startSize = { X = W._width, Y = W._height }
     end)
 
+    -- ============================================================
+    -- [PATCHED] Drag with edge resistance
+    -- ============================================================
     table.insert(W._conns, UserInputService.InputChanged:Connect(function(input)
         if input ~= gesture.input then return end
 
         if gesture.mode == "drag" then
             local d = input.Position - gesture.startPos
+            local rawX = gesture.mainStartPos.X.Offset + d.X
+            local rawY = gesture.mainStartPos.Y.Offset + d.Y
+
+            -- Rubber-band damping against viewport edges
+            local cam = Camera or workspace.CurrentCamera
+            if cam and W.Main then
+                local vp = cam.ViewportSize
+                local w  = W.Main.AbsoluteSize.X
+                local h  = W.Main.AbsoluteSize.Y
+                rawX, rawY = ApplyEdgeResistance(rawX, rawY, w, h, vp)
+            end
+
             W.Main.Position = UDim2.new(
-                gesture.mainStartPos.X.Scale, gesture.mainStartPos.X.Offset + d.X,
-                gesture.mainStartPos.Y.Scale, gesture.mainStartPos.Y.Offset + d.Y
+                gesture.mainStartPos.X.Scale, rawX,
+                gesture.mainStartPos.Y.Scale, rawY
             )
             if W._onDragTick then W:_onDragTick() end
+
         elseif gesture.mode == "resize" then
             local d = input.Position - gesture.startPos
             W._width  = math.clamp(gesture.startSize.X + d.X, W._minWidth,  W._maxWidth)
@@ -433,13 +460,25 @@ function LucidUI:CreateWindow(config)
         end
     end))
 
+    -- ============================================================
+    -- [PATCHED] Release with spring-back
+    -- ============================================================
     table.insert(W._conns, UserInputService.InputEnded:Connect(function(input)
         if input ~= gesture.input then return end
         local wasDrag = (gesture.mode == "drag")
-        if gesture.mode == "drag" or gesture.mode == "resize" then
-            ClampPosition(W.Main)
+
+        if gesture.mode == "drag" then
+            ClampPosition(W.Main, {
+                duration  = 0.35,
+                style     = Enum.EasingStyle.Back,
+                direction = Enum.EasingDirection.Out,
+            })
+        elseif gesture.mode == "resize" then
+            ClampPosition(W.Main, { instant = true })
         end
+
         if wasDrag and W._onDragEnd then W:_onDragEnd() end
+
         gesture.input        = nil
         gesture.mode         = nil
         gesture.startPos     = nil
@@ -641,9 +680,14 @@ function LucidUI:CreateWindow(config)
         )
     end))
 
+    -- [PATCHED] Pill release with spring-back
     table.insert(W._conns, UserInputService.InputEnded:Connect(function(input)
         if input ~= pillGesture.input then return end
-        ClampPosition(W.FloatingPill)
+        ClampPosition(W.FloatingPill, {
+            duration  = 0.30,
+            style     = Enum.EasingStyle.Back,
+            direction = Enum.EasingDirection.Out,
+        })
         pillGesture.input          = nil
         pillGesture.startPos       = nil
         pillGesture.startWindowPos = nil
@@ -729,18 +773,16 @@ function LucidUI.Window:RestoreFromPill()
     if not self.FloatingPill then return end
     self.Floating = false
 
-    -- FIX: If the window was minimized before turning into a pill,
-    -- restore it to its full size instead of a tiny bar.
     if self.Minimized then
         self.Minimized = false
         self.Main.Size = UDim2.fromOffset(self._width, self._height)
-        
+
         if not self.SettingsOpen then
             self.Content.Visible   = true
             self.Separator.Visible = true
             self.TabStrip.Visible  = true
         end
-        
+
         if self._settingsBtn then
             self._settingsBtn.Visible = true
             if self._gearRefs then
@@ -752,8 +794,7 @@ function LucidUI.Window:RestoreFromPill()
                 end
             end
         end
-        
-        -- FIX: Re-show the resize handle since we're back to normal size
+
         if self._resizeHandle then self._resizeHandle.Visible = true end
     end
 
@@ -892,9 +933,8 @@ function LucidUI.Window:SetMinimized(state)
     local targetHeight = state and collapsedHeight or self._height
 
     if state then
-        -- FIX: Hide the resize handle so it doesn't eat the red dot's clicks
         if self._resizeHandle then self._resizeHandle.Visible = false end
-        
+
         if self._gearRefs then
             for _, p in ipairs(self._gearRefs.parts) do
                 TweenService:Create(p, TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
@@ -923,9 +963,8 @@ function LucidUI.Window:SetMinimized(state)
     }):Play()
 
     if not state then
-        -- FIX: Re-show the resize handle when the window is restored
         if self._resizeHandle then self._resizeHandle.Visible = true end
-        
+
         task.delay(0.05, function()
             if self._settingsBtn then
                 self._settingsBtn.Visible = true
