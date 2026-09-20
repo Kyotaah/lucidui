@@ -2,29 +2,42 @@
 -- Module: 02c_void_hooks.lua
 -- ============================================================
 --[[
-    Installs VoidStyle window hooks AFTER 06_window defines
+    VoidStyle window hooks — installed AFTER 06_window.lua defines
     LucidUI.CreateWindow, LucidUI.Window.SetThemeObject, and
     LucidUI.Window.Destroy.
 
-    Must load AFTER 06_window.lua in build order.
+    Must load immediately after 06_window.lua in build order.
+
+    Adds:
+      • CreateWindow hook — applies VoidStyle theme + enhancements
+      • SetThemeObject hook — re-tints glow ring + animated border
+        when the theme changes at runtime
+      • Destroy hook — cleans up the glow ring + animated border
+
+    NO tracking. NO network. NO clipboard.
 ]]
 
+-- Guard: bail if 06_window hasn't loaded yet
 if not LucidUI or not LucidUI.CreateWindow or not LucidUI.Window then
     warn("[LucidUI] VoidHooks: 06_window not loaded — skipping")
     return
 end
 
 -- ============================================================
--- CreateWindow hook
+-- 1. CreateWindow hook
 -- ============================================================
 local _origCreateWindow = LucidUI.CreateWindow
 function LucidUI:CreateWindow(config)
     config = config or {}
+
+    -- Auto-select Void theme if VoidStyle is requested without a theme
     if config.VoidStyle and not config.Theme then
         config.Theme = "Void"
     end
+
     local W = _origCreateWindow(self, config)
 
+    -- Resolve enhancement flags
     local enhanceGlass = config.EnhanceGlass
     local ambientGlow  = config.AmbientGlow
     local animatedBord = config.AnimatedBorder
@@ -34,7 +47,7 @@ function LucidUI:CreateWindow(config)
         if ambientGlow  == nil then ambientGlow  = true end
         if animatedBord == nil then animatedBord = true end
     else
-        if enhanceGlass == nil then enhanceGlass = true end
+        if enhanceGlass == nil then enhanceGlass = true  end
         if ambientGlow  == nil then ambientGlow  = false end
         if animatedBord == nil then animatedBord = false end
     end
@@ -50,14 +63,23 @@ function LucidUI:CreateWindow(config)
 
     task.defer(function()
         if not (W.Main and W.Main.Parent) then return end
+
         if W._voidEnhance.EnhanceGlass and LucidUI.EnhanceGlass then
-            pcall(function() LucidUI.EnhanceGlass(W.Main, W.Theme, W._voidEnhance) end)
+            pcall(function()
+                LucidUI.EnhanceGlass(W.Main, W.Theme, W._voidEnhance)
+            end)
         end
+
         if W._voidEnhance.AmbientGlow and LucidUI._BuildAmbientGlow then
-            pcall(function() LucidUI._BuildAmbientGlow(W, W.Theme, W._voidEnhance) end)
+            pcall(function()
+                LucidUI._BuildAmbientGlow(W, W.Theme, W._voidEnhance)
+            end)
         end
+
         if W._voidEnhance.AnimatedBorder and LucidUI._BuildAnimatedBorder then
-            pcall(function() LucidUI._BuildAnimatedBorder(W, W.Theme, W._voidEnhance) end)
+            pcall(function()
+                LucidUI._BuildAnimatedBorder(W, W.Theme, W._voidEnhance)
+            end)
         end
     end)
 
@@ -65,16 +87,19 @@ function LucidUI:CreateWindow(config)
 end
 
 -- ============================================================
--- SetThemeObject hook — re-tints on runtime theme change
+-- 2. SetThemeObject hook — retint on runtime theme change
 -- ============================================================
 local _origSetThemeObject = LucidUI.Window.SetThemeObject
 function LucidUI.Window:SetThemeObject(t)
     _origSetThemeObject(self, t)
+
     if not self._voidEnhance then return end
     local opts = self._voidEnhance
 
     if opts.EnhanceGlass and self.Main and LucidUI.EnhanceGlass then
-        pcall(function() LucidUI.EnhanceGlass(self.Main, t, opts) end)
+        pcall(function()
+            LucidUI.EnhanceGlass(self.Main, t, opts)
+        end)
     end
 
     if opts.AmbientGlow and self._ambientGlowLayers then
@@ -105,7 +130,7 @@ function LucidUI.Window:SetThemeObject(t)
 end
 
 -- ============================================================
--- Destroy hook — cleanup glow ring + animated border
+-- 3. Destroy hook — cleanup glow ring + animated border
 -- ============================================================
 local _origWindowDestroy = LucidUI.Window.Destroy
 function LucidUI.Window:Destroy()
@@ -124,6 +149,9 @@ function LucidUI.Window:Destroy()
     _origWindowDestroy(self)
 end
 
+-- ============================================================
+-- 4. Cleanup registration
+-- ============================================================
 LucidUI:OnCleanup(function()
     print("[LucidUI] VoidHooks cleaned up")
 end)
