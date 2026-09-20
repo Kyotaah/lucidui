@@ -1,5 +1,5 @@
 -- ============================================================
--- Module: 06d_floating_button.lua
+-- Module: 06d_floatingbutton.lua
 -- ============================================================
 --[[
     Floating Button — a draggable, always-visible button that
@@ -30,6 +30,11 @@
       • Optional auto-hide when its window is open
       • Theme-aware (auto-tints on theme change)
       • Cleaned up on re-execute via OnCleanup
+
+    [FIX] Badge pulse loop was an infinite no-op (set static values,
+    did nothing). Now it actually breathes — scale + transparency
+    oscillate on a sine wave and stop cleanly when the badge is
+    destroyed.
 
     NO tracking. NO network. NO clipboard.
 ]]
@@ -126,12 +131,21 @@ local function buildButtonInstance(cfg, parentGui)
         Corner(999, badge)
 
         local badgeStroke = Stroke(Color3.fromRGB(0, 0, 0), 1.5, 0.4, badge)
-        local pulseRun = true
+
+        -- [FIX] Previously this was an infinite no-op loop that set
+        -- static values forever. Now it actually pulses: the badge
+        -- grows/shrinks and fades in a sine wave. The loop exits
+        -- cleanly when the badge is destroyed.
         task.spawn(function()
-            while pulseRun and badge.Parent do
-                badge.Size = UDim2.fromOffset(10, 10)
-                badge.BackgroundTransparency = 0
-                task.wait(0.05)
+            local BASE_SIZE = 10
+            local PULSE_AMPLITUDE = 3
+            while badge and badge.Parent do
+                local t = tick()
+                local pulse = 0.5 + 0.5 * math.sin(t * 3)   -- 0..1
+                local size = BASE_SIZE + pulse * PULSE_AMPLITUDE
+                badge.Size = UDim2.fromOffset(size, size)
+                badge.BackgroundTransparency = pulse * 0.35
+                task.wait(0.03)
             end
         end)
     end
@@ -355,7 +369,7 @@ function LucidUI:CreateFloatingButton(cfg)
 
                 local distLeft  = curX
                 local distRight = vp.X - (curX + w)
-                local targetX, anchor
+                local targetX
 
                 if distLeft < distRight then
                     targetX = margin
@@ -495,6 +509,20 @@ function LucidUI:CreateFloatingButton(cfg)
             })
             Corner(999, b)
             self.Badge = b
+
+            -- [FIX] Same animated pulse as the primary badge path
+            task.spawn(function()
+                local BASE_SIZE = 10
+                local PULSE_AMPLITUDE = 3
+                while b and b.Parent do
+                    local t = tick()
+                    local pulse = 0.5 + 0.5 * math.sin(t * 3)
+                    local size = BASE_SIZE + pulse * PULSE_AMPLITUDE
+                    b.Size = UDim2.fromOffset(size, size)
+                    b.BackgroundTransparency = pulse * 0.35
+                    task.wait(0.03)
+                end
+            end)
         elseif not on and self.Badge then
             pcall(function() self.Badge:Destroy() end)
             self.Badge = nil
