@@ -57,12 +57,14 @@ local function applyPack(name)
 
     -- SOUND_IDS is in scope from 01b_polish.lua (same chunk).
     -- Mutating its fields updates what PlayUISound reads next call.
-    SOUND_IDS.click = pack.click
-    SOUND_IDS.hover = pack.hover
+    -- Empty strings are treated as "no sound" so PlayUISound can
+    -- early-return without creating a dead Sound instance.
+    SOUND_IDS.click = (pack.click ~= "" and pack.click) or nil
+    SOUND_IDS.hover = (pack.hover ~= "" and pack.hover) or nil
 
     LucidUI._currentSoundPack = name
     return true
-end
+    end
 
 -- ============================================================
 -- Public API
