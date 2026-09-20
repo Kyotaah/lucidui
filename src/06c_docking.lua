@@ -1,3 +1,6 @@
+-- ============================================================
+-- Module: 06c_docking.lua
+-- ============================================================
 --[[
     Docking — snap the window to screen edges and corners.
 
@@ -16,6 +19,13 @@
     [IMPROVEMENT] Uses GuiService.TopbarInset for safe area, self.Gui
     size for accurate bounds, opt-in only, all connections tracked,
     FLOAT button for mobile users.
+
+    [FIX] The top-edge detection threshold now matches the top snap
+    position. Previously _computeDockZone used `thr + topInset` while
+    _dockRect used `m + topInset`. With defaults (thr=30, m=12), the
+    top hitbox extended 18px higher than where the window actually
+    snapped — a preview would appear, then the window would jump
+    lower than the preview suggested. Now both use `_dockMargin`.
 ]]
 
 local GuiService = game:GetService("GuiService")
@@ -119,11 +129,17 @@ function LucidUI.Window:_computeDockZone()
     local pos  = self.Main.AbsolutePosition
     local size = self.Main.AbsoluteSize
     local thr  = self._dockThreshold
+    local m    = self._dockMargin or 12
     local topInset = GuiService.TopbarInset.Height
 
     local nearLeft   = pos.X <= thr
     local nearRight  = pos.X + size.X >= scrW - thr
-    local nearTop    = pos.Y <= thr + topInset
+    -- [FIX] Use _dockMargin for the top threshold so the hitbox
+    -- matches where _dockRect actually snaps the window. Previously
+    -- used `thr` (default 30), which extended 18px past the snap
+    -- line (default 12), causing the preview to appear higher than
+    -- the resulting position.
+    local nearTop    = pos.Y <= m + topInset
     local nearBottom = pos.Y + size.Y >= scrH - thr
 
     if nearTop and nearLeft     then return "top-left"     end
