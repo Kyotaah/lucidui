@@ -565,11 +565,13 @@ LucidUI:OnCleanup(function()
 end)
 
 -- ============================================================
--- 11. Public API
+-- 11. Public API — exposed so 02c_void_hooks.lua can install
+--     the CreateWindow / SetThemeObject / Destroy wrappers AFTER
+--     06_window.lua has defined LucidUI.Window.
 -- ============================================================
-function LucidUI.EnhanceGlass(frame, theme, opts)
-    enhanceGlassLayers(frame, theme or LucidUI._lastTheme, opts or {})
-end
+LucidUI.EnhanceGlass         = enhanceGlassLayers
+LucidUI._BuildAmbientGlow    = buildAmbientGlow
+LucidUI._BuildAnimatedBorder = buildAnimatedBorder
 
 function LucidUI:ApplyVoidStyle(window)
     if not window or not window.Main then return false end
