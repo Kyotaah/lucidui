@@ -1,3 +1,6 @@
+-- ============================================================
+-- Module: 01b_polish.lua
+-- ============================================================
 --[[
     Polish — ripple, hover glow, hover tooltip, press scale, UI sounds.
 
@@ -5,6 +8,13 @@
     target is destroyed mid-press. PlayUISound pools its Sound instances
     to prevent spam. AttachPressScale gives tactile feedback. BindTap
     accepts options.Sound and options.Ripple to toggle effects per element.
+
+    [FIX] SOUND_IDS is now exported to LucidUI._SOUND_IDS. The
+    sound-pack module (08b_soundpacks.lua) previously mutated this
+    local directly, relying on chunk-scope visibility. That worked
+    today but would silently break the moment this file's body is
+    wrapped in a do...end block or extracted into a function. The
+    export makes the reference stable regardless of future refactors.
 ]]
 
 -- ============================================================
@@ -15,6 +25,10 @@ local SOUND_IDS = {
     click = "rbxasset://sounds/electronicpingshort.wav",
     hover = "rbxasset://sounds/switch.wav",
 }
+
+-- [FIX] Stable export so 08b_soundpacks.lua can mutate SOUND_IDS
+-- without depending on same-chunk scoping.
+LucidUI._SOUND_IDS = SOUND_IDS
 
 local function PlayUISound(kind)
     local id = SOUND_IDS[kind]
