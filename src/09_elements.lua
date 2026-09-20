@@ -1,3 +1,6 @@
+-- ============================================================
+-- Module: 09_elements.lua
+-- ============================================================
 --[[
     Elements — every interactive widget LucidUI ships.
 
@@ -5,6 +8,10 @@
     Added search to Dropdown. Added Loading state to Button.
     All callbacks wrapped in Compat.safeCallback. All elements now
     have Get/Set methods.
+
+    [NEW] Every builder accepts a `Tooltip = "..."` config field.
+    When provided, a themed tooltip is attached (works on hover and
+    mobile long-press via 08n_tooltips.lua).
 ]]--
 
 -- ============================================================
@@ -90,6 +97,11 @@ function LucidUI.Section:CreateButton(config)
     end)
 
     self:_track(btn)
+
+    -- [NEW] Tooltip
+    if config.Tooltip and LucidUI._AttachTooltip then
+        LucidUI._AttachTooltip(btn, config.Tooltip)
+    end
 
     return {
         Instance = btn,
@@ -190,6 +202,12 @@ function LucidUI.Section:CreateButtonPair(config)
     local right = makeBtn("right", config.Right)
 
     self:_track(row)
+
+    -- [NEW] Tooltip
+    if config.Tooltip and LucidUI._AttachTooltip then
+        LucidUI._AttachTooltip(row, config.Tooltip)
+    end
+
     return { Instance = row, Left = left, Right = right }
 end
 
@@ -294,6 +312,12 @@ function LucidUI.Section:CreateToggle(config)
     end
 
     self:_track(row)
+
+    -- [NEW] Tooltip
+    if config.Tooltip and LucidUI._AttachTooltip then
+        LucidUI._AttachTooltip(row, config.Tooltip)
+    end
+
     return obj
 end
 
@@ -414,6 +438,12 @@ function LucidUI.Section:CreateCheckbox(config)
     end
 
     self:_track(row)
+
+    -- [NEW] Tooltip
+    if config.Tooltip and LucidUI._AttachTooltip then
+        LucidUI._AttachTooltip(row, config.Tooltip)
+    end
+
     return obj
 end
 
@@ -553,6 +583,11 @@ function LucidUI.Section:CreateRadio(config)
     end)
 
     self:_track(container)
+
+    -- [NEW] Tooltip
+    if config.Tooltip and LucidUI._AttachTooltip then
+        LucidUI._AttachTooltip(container, config.Tooltip)
+    end
 
     local obj = {
         Instance = container, Flag = flag,
@@ -779,6 +814,12 @@ function LucidUI.Section:CreateSlider(config)
     end
 
     self:_track(row)
+
+    -- [NEW] Tooltip
+    if config.Tooltip and LucidUI._AttachTooltip then
+        LucidUI._AttachTooltip(row, config.Tooltip)
+    end
+
     return obj
 end
 
@@ -840,7 +881,6 @@ function LucidUI.Section:CreateDropdown(config)
         ZIndex = 4, Parent = headerBtn,
     })
 
-    -- [IMPROVEMENT] Search bar when there are many options
     local searchBox
     if withSearch then
         searchBox = Create("TextBox", {
@@ -985,6 +1025,12 @@ function LucidUI.Section:CreateDropdown(config)
     end
 
     self:_track(row)
+
+    -- [NEW] Tooltip
+    if config.Tooltip and LucidUI._AttachTooltip then
+        LucidUI._AttachTooltip(row, config.Tooltip)
+    end
+
     return obj
 end
 
@@ -1297,6 +1343,12 @@ function LucidUI.Section:CreateMultiDropdown(config)
     end
 
     self:_track(row)
+
+    -- [NEW] Tooltip
+    if config.Tooltip and LucidUI._AttachTooltip then
+        LucidUI._AttachTooltip(row, config.Tooltip)
+    end
+
     return obj
 end
 
@@ -1405,6 +1457,12 @@ function LucidUI.Section:CreateColorPicker(config)
     end
 
     self:_track(row)
+
+    -- [NEW] Tooltip
+    if config.Tooltip and LucidUI._AttachTooltip then
+        LucidUI._AttachTooltip(row, config.Tooltip)
+    end
+
     return obj
 end
 
@@ -1509,6 +1567,12 @@ function LucidUI.Section:CreateKeybind(config)
     end
 
     self:_track(row)
+
+    -- [NEW] Tooltip
+    if config.Tooltip and LucidUI._AttachTooltip then
+        LucidUI._AttachTooltip(row, config.Tooltip)
+    end
+
     return obj
 end
 
@@ -1587,6 +1651,12 @@ function LucidUI.Section:CreateInput(config)
     end
 
     self:_track(row)
+
+    -- [NEW] Tooltip
+    if config.Tooltip and LucidUI._AttachTooltip then
+        LucidUI._AttachTooltip(row, config.Tooltip)
+    end
+
     return obj
 end
 
@@ -1723,11 +1793,17 @@ function LucidUI.Section:CreateSearch(config)
     end
 
     self:_track(row)
+
+    -- [NEW] Tooltip
+    if config.Tooltip and LucidUI._AttachTooltip then
+        LucidUI._AttachTooltip(row, config.Tooltip)
+    end
+
     return obj
 end
 
 -- ============================================================
--- ProgressBar [NEW]
+-- ProgressBar
 -- ============================================================
 function LucidUI.Section:CreateProgressBar(config)
     config = config or {}
@@ -1810,11 +1886,17 @@ function LucidUI.Section:CreateProgressBar(config)
     end
 
     self:_track(row)
+
+    -- [NEW] Tooltip
+    if config.Tooltip and LucidUI._AttachTooltip then
+        LucidUI._AttachTooltip(row, config.Tooltip)
+    end
+
     return obj
 end
 
 -- ============================================================
--- LoadingSpinner [NEW]
+-- LoadingSpinner
 -- ============================================================
 function LucidUI.Section:CreateLoadingSpinner(config)
     config = config or {}
@@ -1869,6 +1951,11 @@ function LucidUI.Section:CreateLoadingSpinner(config)
 
     self:_track(row)
 
+    -- [NEW] Tooltip
+    if config.Tooltip and LucidUI._AttachTooltip then
+        LucidUI._AttachTooltip(row, config.Tooltip)
+    end
+
     return {
         Instance = row,
         Stop = function()
@@ -1880,7 +1967,7 @@ function LucidUI.Section:CreateLoadingSpinner(config)
 end
 
 -- ============================================================
--- ConfirmDialog [NEW] — modal yes/no prompt
+-- ConfirmDialog
 -- ============================================================
 function LucidUI.Section:CreateConfirmDialog(config)
     config = config or {}
@@ -2032,6 +2119,11 @@ function LucidUI.Section:CreateConfirmDialog(config)
 
     self:_track(row)
 
+    -- [NEW] Tooltip
+    if config.Tooltip and LucidUI._AttachTooltip then
+        LucidUI._AttachTooltip(row, config.Tooltip)
+    end
+
     return {
         Instance = row,
         Show = openConfirm,
@@ -2039,7 +2131,7 @@ function LucidUI.Section:CreateConfirmDialog(config)
 end
 
 -- ============================================================
--- Table (unchanged core, minor pcall + safe callback)
+-- Table
 -- ============================================================
 function LucidUI.Section:CreateTable(config)
     config = config or {}
@@ -2291,12 +2383,17 @@ function LucidUI.Section:CreateTable(config)
     }
 
     self:_track(wrapper)
+
+    -- [NEW] Tooltip
+    if config.Tooltip and LucidUI._AttachTooltip then
+        LucidUI._AttachTooltip(wrapper, config.Tooltip)
+    end
+
     return obj
 end
 
 -- ============================================================
--- Display elements (TextDisplay, Label, Paragraph, Divider,
--- Spacer, Badge, StatCard, StatusIndicator, Banner, Image)
+-- Display elements
 -- ============================================================
 function LucidUI.Section:CreateTextDisplay(config)
     config = config or {}
@@ -2347,6 +2444,11 @@ function LucidUI.Section:CreateTextDisplay(config)
     end)
 
     self:_track(row)
+
+    -- [NEW] Tooltip
+    if config.Tooltip and LucidUI._AttachTooltip then
+        LucidUI._AttachTooltip(row, config.Tooltip)
+    end
 
     return {
         Instance = row,
@@ -2410,6 +2512,11 @@ function LucidUI.Section:CreateLabel(config)
 
     self:_track(row)
 
+    -- [NEW] Tooltip
+    if config.Tooltip and LucidUI._AttachTooltip then
+        LucidUI._AttachTooltip(row, config.Tooltip)
+    end
+
     return {
         Instance = row,
         Set = function(_, v) label.Text = tostring(v) end,
@@ -2466,6 +2573,11 @@ function LucidUI.Section:CreateParagraph(config)
     end)
 
     self:_track(row)
+
+    -- [NEW] Tooltip
+    if config.Tooltip and LucidUI._AttachTooltip then
+        LucidUI._AttachTooltip(row, config.Tooltip)
+    end
 
     return {
         Instance = row,
@@ -2535,6 +2647,12 @@ function LucidUI.Section:CreateDivider(config)
     end
 
     self:_track(row)
+
+    -- [NEW] Tooltip
+    if config.Tooltip and LucidUI._AttachTooltip then
+        LucidUI._AttachTooltip(row, config.Tooltip)
+    end
+
     return { Instance = row }
 end
 
@@ -2550,6 +2668,7 @@ function LucidUI.Section:CreateSpacer(config)
     })
 
     self:_track(row)
+    -- Spacer has no tooltip (nothing to hover meaningfully)
     return { Instance = row }
 end
 
@@ -2624,6 +2743,11 @@ function LucidUI.Section:CreateBadge(config)
     end)
 
     self:_track(row)
+
+    -- [NEW] Tooltip
+    if config.Tooltip and LucidUI._AttachTooltip then
+        LucidUI._AttachTooltip(row, config.Tooltip)
+    end
 
     return {
         Instance = row,
@@ -2715,6 +2839,11 @@ function LucidUI.Section:CreateStatCard(config)
     end)
 
     self:_track(row)
+
+    -- [NEW] Tooltip
+    if config.Tooltip and LucidUI._AttachTooltip then
+        LucidUI._AttachTooltip(row, config.Tooltip)
+    end
 
     local obj = {
         Instance = row,
@@ -2821,6 +2950,11 @@ function LucidUI.Section:CreateStatusIndicator(config)
     end)
 
     self:_track(row)
+
+    -- [NEW] Tooltip
+    if config.Tooltip and LucidUI._AttachTooltip then
+        LucidUI._AttachTooltip(row, config.Tooltip)
+    end
 
     local obj = {
         Instance = row, Flag = flag,
@@ -2942,6 +3076,11 @@ function LucidUI.Section:CreateBanner(config)
 
     self:_track(row)
 
+    -- [NEW] Tooltip
+    if config.Tooltip and LucidUI._AttachTooltip then
+        LucidUI._AttachTooltip(row, config.Tooltip)
+    end
+
     return {
         Instance = row,
         Set = function(_, v) bodyLabel.Text = tostring(v) end,
@@ -3015,6 +3154,11 @@ function LucidUI.Section:CreateImage(config)
 
     self:_track(row)
 
+    -- [NEW] Tooltip
+    if config.Tooltip and LucidUI._AttachTooltip then
+        LucidUI._AttachTooltip(row, config.Tooltip)
+    end
+
     return {
         Instance = row,
         Set = function(_, v)
@@ -3038,14 +3182,21 @@ end
 --     LucidUI:OnCleanup(function()
 --         conn:Disconnect()
 --     end)
+--
+-- Note: This is a duplicate of the definition in 02_themes.lua.
+-- Kept here for backwards compatibility with scripts that expect
+-- to find it in the elements module. The 02_themes version runs
+-- first and takes priority.
 -- ============================================================
-function LucidUI:OnCleanup(fn)
-    if type(fn) ~= "function" then
-        warn("[LucidUI] OnCleanup expects a function")
-        return
+if not LucidUI.OnCleanup then
+    function LucidUI:OnCleanup(fn)
+        if type(fn) ~= "function" then
+            warn("[LucidUI] OnCleanup expects a function")
+            return
+        end
+        LucidUI._cleanupCallbacks = LucidUI._cleanupCallbacks or {}
+        table.insert(LucidUI._cleanupCallbacks, fn)
     end
-    LucidUI._cleanupCallbacks = LucidUI._cleanupCallbacks or {}
-    table.insert(LucidUI._cleanupCallbacks, fn)
 end
 
 -- ============================================================
