@@ -2,7 +2,11 @@
     Window — creates the main window and every layer that sits inside it.
 ]]
 
-LucidUI.Window = {}
+-- Preserve any pre-existing LucidUI.Window table (in case a future
+-- module loads before us and patches it). If nothing exists yet,
+-- create a fresh empty table. Either way, ensure __index points to
+-- itself so methods added later still resolve.
+LucidUI.Window = LucidUI.Window or {}
 LucidUI.Window.__index = LucidUI.Window
 
 local function TweenColor(inst, prop, target, time)
