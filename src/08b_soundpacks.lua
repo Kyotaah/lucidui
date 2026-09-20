@@ -1,9 +1,11 @@
-
+-- ============================================================
+-- Module: 08b_soundpacks.lua
+-- ============================================================
 --[[
     Sound Packs — selectable UI sound sets.
 
-    Loads after 01b_polish.lua so it can mutate SOUND_IDS (the table
-    is a local in the same chunk, so its fields are mutable here).
+    Loads after 01b_polish.lua so it can mutate SOUND_IDS via the
+    exported LucidUI._SOUND_IDS reference.
 
     Adds:
       LucidUI:SetSoundPack(name)     -> boolean
@@ -11,12 +13,19 @@
       LucidUI:ListSoundPacks()       -> { { key, display }, ... }
 
     Also hooks BuildSettingsPanel to register a Sound dropdown.
+
+    [FIX] applyPack now writes through LucidUI._SOUND_IDS instead of
+    directly indexing a SOUND_IDS local. The old approach depended on
+    01b_polish.lua and this file living in the same chunk scope; the
+    moment either file is wrapped in do...end or extracted, the
+    assignment would silently fail. The exported reference is stable
+    across any future refactor.
 ]]
 
 -- ============================================================
 -- Pack definitions
--- Each entry's `click` / `hover` values are written directly into
--- SOUND_IDS (defined in 01b_polish.lua) when the pack is applied.
+-- Each entry's `click` / `hover` values are written into the
+-- shared SOUND_IDS table (via LucidUI._SOUND_IDS) when applied.
 -- ============================================================
 local PACKS = {
     classic = {
@@ -49,22 +58,29 @@ local PACKS = {
 LucidUI._currentSoundPack = "classic"
 
 -- ============================================================
--- Apply a pack — writes into the SOUND_IDS local from 01b_polish.lua
+-- Apply a pack — writes into the shared SOUND_IDS table
 -- ============================================================
 local function applyPack(name)
     local pack = PACKS[name]
     if not pack then return false end
 
-    -- SOUND_IDS is in scope from 01b_polish.lua (same chunk).
-    -- Mutating its fields updates what PlayUISound reads next call.
-    -- Empty strings are treated as "no sound" so PlayUISound can
-    -- early-return without creating a dead Sound instance.
-    SOUND_IDS.click = (pack.click ~= "" and pack.click) or nil
-    SOUND_IDS.hover = (pack.hover ~= "" and pack.hover) or nil
+    -- [FIX] Use the stable export from 01b_polish.lua instead of
+    -- relying on chunk-scope visibility of a local. Empty strings
+    -- are treated as "no sound" so PlayUISound can early-return
+    -- without creating a dead Sound instance.
+    local ids = LucidUI._SOUND_IDS
+    if not ids then
+        warn("[LucidUI] SoundPack: SOUND_IDS export missing — "
+            .. "make sure 01b_polish.lua ran first.")
+        return false
+    end
+
+    ids.click = (pack.click ~= "" and pack.click) or nil
+    ids.hover = (pack.hover ~= "" and pack.hover) or nil
 
     LucidUI._currentSoundPack = name
     return true
-    end
+end
 
 -- ============================================================
 -- Public API
