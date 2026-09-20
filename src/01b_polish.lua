@@ -18,7 +18,7 @@ local SOUND_IDS = {
 
 local function PlayUISound(kind)
     local id = SOUND_IDS[kind]
-    if not id then return end
+    if not id or id == "" then return end
 
     soundPool[kind] = soundPool[kind] or {}
     local pool = soundPool[kind]
