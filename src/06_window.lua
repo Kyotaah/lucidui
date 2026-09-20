@@ -80,11 +80,20 @@ function LucidUI:CreateWindow(config)
 
     W.UIScale = Create("UIScale", { Scale = GetResponsiveScale(), Parent = W.Gui })
 
-    table.insert(W._conns, Camera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
-        if W.UIScale and W.UIScale.Parent then W.UIScale.Scale = GetResponsiveScale() end
-        pcall(function() ClampPosition(W.Main) end)
-        pcall(function() ClampPosition(W.FloatingPill) end)
-    end))
+    do
+        -- Camera can be nil if 01_helpers.lua's lookup timed out or
+        -- if the executor injected before the camera spawned. Fall
+        -- back to workspace.CurrentCamera at call time and skip the
+        -- connection if even that is unavailable.
+        local cam = Camera or workspace.CurrentCamera
+        if cam then
+            table.insert(W._conns, cam:GetPropertyChangedSignal("ViewportSize"):Connect(function()
+                if W.UIScale and W.UIScale.Parent then W.UIScale.Scale = GetResponsiveScale() end
+                pcall(function() ClampPosition(W.Main) end)
+                pcall(function() ClampPosition(W.FloatingPill) end)
+            end))
+        end
+    end
 
     W.Main = Create("Frame", {
         Name = "Main",
