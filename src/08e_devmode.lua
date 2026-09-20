@@ -1,3 +1,6 @@
+-- ============================================================
+-- Module: 08e_devmode.lua
+-- ============================================================
 --[[
     Dev Mode — developer tooling overlay.
 
@@ -13,6 +16,16 @@
         LucidUI:IsDevMode()
 
     The HUD is a separate ScreenGui so it survives window minimize/close.
+
+    [FIX] Right-click flag copy now works reliably. Previously it
+    parsed the flag out of the tooltip's TextLabel, which only exists
+    while the mouse is actively hovering an element. Right-clicking
+    right after moving off the element did nothing. Now the last-
+    hovered flag is cached on DevMode.lastHoveredFlag and read
+    directly by the handler.
+
+    [CLEANUP] Removed dead safeGetCurrentFlag function — it iterated
+    DevMode.flagLookup, which was never populated anywhere.
 ]]
 
 -- ============================================================
@@ -32,26 +45,13 @@ local DevMode = {
     fpsBuffer    = {},
     frameCount   = 0,
     lastHudTick  = 0,
+    -- [FIX] Cached flag of the most recently hovered element, so the
+    -- right-click handler can copy it even if the tooltip has already
+    -- faded out or the mouse has moved to a non-tracked area.
+    lastHoveredFlag = nil,
 }
 
 LucidUI._devMode = DevMode
-
--- ============================================================
--- Helpers
--- ============================================================
-local function safeGetCurrentFlag(frame)
-    -- Walk up the parent tree to find the wrapping element
-    local current = frame
-    local depth = 0
-    while current and depth < 10 do
-        for entry, flag in pairs(DevMode.flagLookup or {}) do
-            if entry == current then return flag end
-        end
-        current = current.Parent
-        depth = depth + 1
-    end
-    return nil
-end
 
 -- ============================================================
 -- Element tracking — hook Section._track
@@ -168,6 +168,10 @@ local function onElementEnter(entry)
     local frame = entry.frame
     if not frame or not frame.Parent then return end
 
+    -- [FIX] Cache the flag immediately. The right-click handler reads
+    -- this even if the mouse has since left the frame.
+    DevMode.lastHoveredFlag = entry.flag
+
     local outline = ensureHoverOutline()
     local tooltip = ensureHoverTooltip()
     if not outline or not tooltip then return end
@@ -191,7 +195,7 @@ local function onElementEnter(entry)
     local label = tooltip:FindFirstChild("Text")
     if label then
         if entry.flag then
-            label.Text = entry.kind .. "  |  flag: " .. entry.flag
+            label.Text = entry.kind .. "  |  flag: " .. entry.flag .. "  |  RMB to copy"
         else
             label.Text = entry.kind .. "  |  (no flag)"
         end
@@ -210,6 +214,8 @@ local function onElementLeave()
     if DevMode.hoverTooltip then
         DevMode.hoverTooltip.Visible = false
     end
+    -- [FIX] Note: lastHoveredFlag is intentionally NOT cleared here.
+    -- The right-click handler needs it to survive the tooltip fade.
 end
 
 -- ============================================================
@@ -360,27 +366,42 @@ local function enableDevMode()
         end
     end)
 
-    -- Right-click to copy flag
+    -- [FIX] Right-click to copy flag. Now reads from the cached
+    -- lastHoveredFlag instead of parsing the tooltip's TextLabel.
     DevMode.rightClickConn = UserInputService.InputBegan:Connect(function(input)
         if not DevMode.enabled then return end
         if input.UserInputType ~= Enum.UserInputType.MouseButton2 then return end
-        local mouse = LocalPlayer:GetMouse()
-        local target = mouse.Target
-        -- Simplified: just copy the flag of the element under the outline
-        if DevMode.hoverTooltip and DevMode.hoverTooltip.Visible then
-            local label = DevMode.hoverTooltip:FindFirstChild("Text")
-            if label and label.Text:find("flag:") then
-                local flag = label.Text:match("flag: (%S+)")
-                if flag and type(setclipboard) == "function" then
-                    pcall(setclipboard, flag)
-                    LucidUI:Notify({
-                        Title = "Copied",
-                        Message = "Flag: " .. flag,
-                        Variant = "success",
-                        Duration = 2,
-                    })
-                end
-            end
+
+        local flag = DevMode.lastHoveredFlag
+        if not flag or flag == "" then
+            return  -- nothing hovered yet this session
+        end
+
+        if type(setclipboard) ~= "function" then
+            LucidUI:Notify({
+                Title = "Clipboard Unavailable",
+                Message = "This executor doesn't support setclipboard.",
+                Variant = "warn",
+                Duration = 3,
+            })
+            return
+        end
+
+        local ok = pcall(setclipboard, flag)
+        if ok then
+            LucidUI:Notify({
+                Title = "Copied",
+                Message = "Flag: " .. flag,
+                Variant = "success",
+                Duration = 2,
+            })
+        else
+            LucidUI:Notify({
+                Title = "Copy Failed",
+                Message = "setclipboard rejected the call.",
+                Variant = "error",
+                Duration = 3,
+            })
         end
     end)
 end
@@ -402,6 +423,9 @@ local function disableDevMode()
         DevMode.rightClickConn:Disconnect()
         DevMode.rightClickConn = nil
     end
+
+    -- [FIX] Also clear the cached flag when dev mode is disabled.
+    DevMode.lastHoveredFlag = nil
 
     DevMode.updateLoop = nil
 end
@@ -518,13 +542,7 @@ LucidUI.Window.BuildSettingsPanel = function(self, ...)
 end
 
 -- ============================================================
--- Also hook Section._track for future elements
--- ============================================================
--- (Already overridden above, this comment documents the hook)
-
--- ============================================================
--- Cleanup registration — stop the update loop and disconnect
--- the right-click handler when the library is re-executed.
+-- Cleanup registration
 -- ============================================================
 LucidUI:OnCleanup(function()
     -- Stop the update loop FIRST so it doesn't recreate the HUD
@@ -556,6 +574,9 @@ LucidUI:OnCleanup(function()
 
     -- Drop the update loop reference
     DevMode.updateLoop = nil
+
+    -- Clear cached flag
+    DevMode.lastHoveredFlag = nil
 
     print("[LucidUI] DevMode cleaned up")
 end)
