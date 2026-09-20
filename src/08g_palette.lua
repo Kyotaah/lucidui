@@ -538,6 +538,10 @@ function LucidUI:CreateWindow(config)
     })
     Corner(1, lensHandle)
 
+        if LucidUI._AttachTooltip then
+        LucidUI._AttachTooltip(searchBtn, "Search all elements  (Ctrl+K)", { Position = "bottom" })
+    end
+    
     BindTap(searchBtn, function() self:OpenPalette() end)
 
     searchBtn.MouseEnter:Connect(function()
