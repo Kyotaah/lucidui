@@ -1,3 +1,6 @@
+-- ============================================================
+-- Module: 06b_watermark.lua
+-- ============================================================
 --[[
     Watermark — a small floating glass pill in a screen corner.
 
@@ -8,6 +11,11 @@
     [IMPROVEMENT] Fixed the fpsLabel.TextColor3:match crash bug.
     Added GetWatermark, SetPosition. FPS color now uses a smooth
     red→yellow→green gradient.
+
+    [FIX] The highlight (top sheen) layer now re-tints with the
+    theme. Previously it was hardcoded to Color3.fromRGB(255,255,255)
+    which made it invisible against Light / Catppuccin Latte
+    backgrounds. Now it uses theme.TextPrimary.
 ]]
 
 LucidUI.Watermark = {}
@@ -266,8 +274,12 @@ function LucidUI.Window:SetWatermark(config)
         pillStroke.Color      = t.Border
         nameLabel.TextColor3  = t.TextPrimary
         if W.Dot then W.Dot.BackgroundColor3 = W._color or t.Accent end
-        -- [IMPROVEMENT] Removed the buggy fpsLabel.TextColor3:match block.
-        -- The FPS loop now handles color assignment via fpsColor().
+        -- [FIX] Re-tint the sheen layer so it doesn't stay hardcoded
+        -- white. On Light / Latte themes, white-on-white made the
+        -- highlight completely invisible.
+        if W.Highlight and W.Highlight.Parent then
+            W.Highlight.BackgroundColor3 = t.TextPrimary
+        end
     end)
 
     -- Public methods
