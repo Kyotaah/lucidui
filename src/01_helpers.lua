@@ -1,3 +1,6 @@
+-- ============================================================
+-- Module: 01_helpers.lua
+-- ============================================================
 --[[
     Helpers — services, easing, instance constructors, glass rendering,
     viewport utilities. Polish helpers live in 01b_polish.lua.
@@ -14,6 +17,9 @@
 
     [IMPROVEMENT] Never returns early. If PlayerGui or Camera is missing,
     the module waits for it instead of killing the whole library.
+
+    [NEW] ClampPosition now supports animated spring-back via opts.
+    ApplyEdgeResistance provides rubber-band damping during drag.
 ]]
 
 local Players          = game:GetService("Players")
@@ -27,14 +33,11 @@ local SoundService     = game:GetService("SoundService")
 
 local LocalPlayer = Players.LocalPlayer
 
--- [IMPROVEMENT] Safe wait instead of early return. If PlayerGui
--- isn't ready, wait up to 30 seconds for it.
 local PlayerGui = LocalPlayer:FindFirstChild("PlayerGui")
 if not PlayerGui then
     PlayerGui = LocalPlayer:WaitForChild("PlayerGui", 30)
 end
 
--- [IMPROVEMENT] Safe wait for Camera.
 local Camera = workspace.CurrentCamera
 if not Camera then
     local tries = 0
@@ -48,7 +51,6 @@ if not Camera then
     warn("[LucidUI] Camera was not found. Some features may not work.")
 end
 
--- [IMPROVEMENT] Accessors so other modules can safely fetch these.
 local function GetPlayerGui() return PlayerGui end
 local function GetCamera()    return Camera or workspace.CurrentCamera end
 
@@ -86,8 +88,6 @@ local function Stroke(color, thickness, transparency, parent)
     })
 end
 
--- Per-corner radii helper. Used by the glass layers so highlights
--- don't poke past the panel's rounded corners.
 local function PartialCorner(parent, tl, tr, bl, br)
     local c = Instance.new("UICorner")
     c.TopLeftRadius     = UDim.new(0, tl or 0)
@@ -106,15 +106,12 @@ local function Tween(inst, time, props, style, dir)
     )
 end
 
--- [IMPROVEMENT] Convenience helper for rounded frames.
 local function CreateRoundedFrame(props, radius)
     local frame = Create("Frame", props)
     Corner(radius or 10, frame)
     return frame
 end
 
--- [IMPROVEMENT] Debounce — calls fn only after `wait` seconds
--- of no further invocations. Great for search boxes.
 local function Debounce(wait, fn)
     local token = 0
     return function(...)
@@ -129,7 +126,6 @@ local function Debounce(wait, fn)
     end
 end
 
--- [IMPROVEMENT] Throttle — calls fn at most once per `interval` seconds.
 local function Throttle(interval, fn)
     local lastCall = 0
     return function(...)
@@ -146,7 +142,7 @@ local function ApplyGlass(frame, theme, opts)
     local radius   = opts.cornerRadius or 18
     local animated = (opts.animated ~= false)
     local sweepGap = opts.sweepGap or 5
-    local shadow   = opts.shadow == true -- [IMPROVEMENT] optional
+    local shadow   = opts.shadow == true
 
     frame.BackgroundColor3       = theme.Background
     frame.BackgroundTransparency = theme.BackgroundTrans or 0.35
@@ -154,7 +150,6 @@ local function ApplyGlass(frame, theme, opts)
     Corner(radius, frame)
     Stroke(theme.Border, 1, math.min((theme.BorderTrans or 0.85) + 0.05, 1), frame)
 
-    -- Top-edge highlight
     local topHighlight = Create("Frame", {
         Name = "GlassTopHighlight",
         Size = UDim2.fromScale(1, 0.5),
@@ -176,7 +171,6 @@ local function ApplyGlass(frame, theme, opts)
         Parent = topHighlight,
     })
 
-    -- Static diagonal sheen
     local sheenBase = Create("Frame", {
         Name = "GlassSheenBase",
         Size = UDim2.fromScale(1, 1),
@@ -197,7 +191,6 @@ local function ApplyGlass(frame, theme, opts)
         Parent = sheenBase,
     })
 
-    -- Animated light sweep
     local sweep = Create("Frame", {
         Name = "GlassSweep",
         Size = UDim2.fromScale(1, 1),
@@ -239,7 +232,6 @@ local function ApplyGlass(frame, theme, opts)
         end)
     end
 
-    -- Bottom shade
     local bottomShade = Create("Frame", {
         Name = "GlassBottomShade",
         Size = UDim2.fromScale(1, 0.35),
@@ -268,17 +260,77 @@ local function GetResponsiveScale()
     return math.clamp(math.min(vp.X / 1920, vp.Y / 1080) * 1.35, 0.75, 1.35)
 end
 
-local function ClampPosition(frame)
+-- ============================================================
+-- [NEW] ClampPosition with animated spring-back
+-- ============================================================
+-- opts.instant = true → snap immediately (used for resize, resize-end)
+-- opts.duration / opts.style / opts.direction → customize the spring
+local function ClampPosition(frame, opts)
+    opts = opts or {}
     local cam = Camera or workspace.CurrentCamera
     if not cam then return end
+
     local vp   = cam.ViewportSize
     local pos  = frame.AbsolutePosition
     local size = frame.AbsoluteSize
+
     local nx = math.clamp(pos.X, 0, math.max(vp.X - size.X, 0))
     local ny = math.clamp(pos.Y, 0, math.max(vp.Y - size.Y, 0))
+
     local cur = frame.Position
-    frame.Position = UDim2.new(
-        cur.X.Scale, cur.X.Offset + (nx - pos.X),
-        cur.Y.Scale, cur.Y.Offset + (ny - pos.Y)
+    local dx = nx - pos.X
+    local dy = ny - pos.Y
+
+    -- In bounds, or instant requested → snap like before
+    if opts.instant or (math.abs(dx) < 0.5 and math.abs(dy) < 0.5) then
+        frame.Position = UDim2.new(
+            cur.X.Scale, cur.X.Offset + dx,
+            cur.Y.Scale, cur.Y.Offset + dy
+        )
+        return
+    end
+
+    -- Spring back with a subtle overshoot
+    local target = UDim2.new(
+        cur.X.Scale, cur.X.Offset + dx,
+        cur.Y.Scale, cur.Y.Offset + dy
     )
+    pcall(function()
+        TweenService:Create(frame, TweenInfo.new(
+            opts.duration  or 0.35,
+            opts.style     or Enum.EasingStyle.Back,
+            opts.direction or Enum.EasingDirection.Out
+        ), { Position = target }):Play()
+    end)
+end
+
+-- ============================================================
+-- [NEW] Rubber-band damping during drag
+-- ============================================================
+--[[
+    Given a raw (X, Y) pixel position, the frame's size, and the
+    viewport, returns an adjusted (X, Y) that resists being pushed
+    past the viewport edges.
+
+    Damping: sqrt curve, scaled by DAMP, capped at MAX_PUSH.
+    Feel: the first few px of overshoot move ~1:1, then rapidly
+    diminish. You can always feel the wall, but never blow past
+    the screen far enough to lose the window.
+]]
+local function ApplyEdgeResistance(rawX, rawY, w, h, vp)
+    local overLeft   = math.max(0, -rawX)
+    local overRight  = math.max(0, (rawX + w) - vp.X)
+    local overTop    = math.max(0, -rawY)
+    local overBottom = math.max(0, (rawY + h) - vp.Y)
+
+    local DAMP     = 4.0
+    local MAX_PUSH = 60
+
+    local pushLeft   = math.min(math.sqrt(overLeft)   * DAMP, MAX_PUSH)
+    local pushRight  = math.min(math.sqrt(overRight)  * DAMP, MAX_PUSH)
+    local pushTop    = math.min(math.sqrt(overTop)    * DAMP, MAX_PUSH)
+    local pushBottom = math.min(math.sqrt(overBottom) * DAMP, MAX_PUSH)
+
+    return rawX + pushLeft - pushRight,
+           rawY + pushTop  - pushBottom
 end
