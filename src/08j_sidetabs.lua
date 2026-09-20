@@ -27,6 +27,15 @@
         default resize handler overwrites Content.Size)
       • Window minimize (no-op — dimensions already account for it)
 
+    [FIX] convertTabStripToSidebar now re-styles every tab that
+    already exists on the window. Previously it only flipped the
+    UIListLayout to Vertical, which meant pre-existing tabs (like
+    the auto-created MainCredit tab from 08i_credit.lua, or any
+    tabs created before SetSideTabs was called at runtime) kept
+    their horizontal widths and rendered as squat little boxes in
+    the sidebar. Now they're all resized to (1, -8, 0, 36) and
+    left-aligned to match tabs created after conversion.
+
     NO tracking. NO network. NO clipboard.
 ]]
 
@@ -87,6 +96,19 @@ local function applyLayout(W)
     end
 end
 
+-- [FIX] Re-style a single tab button to fit the sidebar.
+-- Shared between conversion-time (existing tabs) and
+-- creation-time (tabs created after conversion).
+local function styleTabForSidebar(tab)
+    if not tab then return end
+    if tab.Button then
+        tab.Button.Size = UDim2.new(1, -8, 0, 36)
+    end
+    if tab.Label then
+        tab.Label.TextXAlignment = Enum.TextXAlignment.Left
+    end
+end
+
 -- ============================================================
 -- Turn a horizontal TabStrip into a vertical sidebar
 -- ============================================================
@@ -128,6 +150,15 @@ local function convertTabStripToSidebar(W, width)
 
     -- 5. Position everything
     applyLayout(W)
+
+    -- [FIX] 5b. Re-style every tab that already exists on this
+    -- window. Without this, tabs created before conversion (which
+    -- includes the auto-Main tab from 08i_credit.lua, since that
+    -- hook runs before ours) keep their horizontal widths and
+    -- render as tiny boxes in a 130px-wide sidebar.
+    for _, tab in ipairs(W.Tabs or {}) do
+        styleTabForSidebar(tab)
+    end
 
     -- 6. Re-apply layout whenever Main resizes (window resize,
     --    minimize animation, etc.). We defer one frame because
@@ -206,14 +237,7 @@ function LucidUI.Window:CreateTab(config)
     end
 
     local tab = _origCreateTab(self, config)
-
-    if tab.Button then
-        tab.Button.Size = UDim2.new(1, -8, 0, 36)
-    end
-    if tab.Label then
-        tab.Label.TextXAlignment = Enum.TextXAlignment.Left
-    end
-
+    styleTabForSidebar(tab)
     return tab
 end
 
@@ -230,16 +254,10 @@ end
 function LucidUI.Window:SetSideTabs(enabled, width)
     if enabled and not self._sideTabsMode then
         convertTabStripToSidebar(self, width or 130)
-        -- Re-style existing tabs
-        for _, tab in ipairs(self.Tabs or {}) do
-            if tab.Button then
-                tab.Button.Size = UDim2.new(1, -8, 0, 36)
-            end
-            if tab.Label then
-                tab.Label.TextXAlignment = Enum.TextXAlignment.Left
-            end
-        end
+        -- Note: convertTabStripToSidebar already restyles existing
+        -- tabs, so we don't need a second loop here anymore.
         return true
+
     elseif not enabled and self._sideTabsMode then
         -- Revert to default horizontal layout
         self._sideTabsMode = false
