@@ -7,6 +7,16 @@
     [NEW] Header buttons now have tooltips (Settings, Minimize, Close).
           Window drag uses rubber-band edge resistance and springs
           back on release.
+
+    [FIX] Settings panel auto-builds on first gear click. Previously
+    the panel existed but was never populated because BuildSettingsPanel()
+    was never called anywhere.
+
+    [FIX] Theme changes now animate smoothly across the ENTIRE window,
+    including all element rows, toggles, sliders, dropdowns, and text.
+    Achieved via a one-pass snapshot of every Color3 property before
+    theme application, then tweening each changed property from old to
+    new. Callbacks still do direct assignment — they don't need patching.
 ]]
 
 LucidUI.Window = LucidUI.Window or {}
@@ -28,11 +38,85 @@ local function TweenColor(inst, prop, target, time)
     end)
 end
 
+-- ============================================================
+-- [NEW] Theme transition — snapshot + tween pass
+-- ============================================================
+-- Every element's _registerTheme callback does direct assignment:
+--     row.BackgroundColor3 = t.Surface
+--     label.TextColor3 = t.TextPrimary
+-- ...which snaps instantly. Rewriting ~40 callbacks to use tweens
+-- individually would be invasive and error-prone.
+--
+-- Instead, before SetThemeObject runs, we walk the entire Gui tree
+-- and record every Color3 property. The callbacks then apply their
+-- new values (instant), and after they all finish we reset every
+-- changed property back to its snapshot value and tween it to the
+-- new value. The user sees a smooth fade.
+
+local SNAPSHOT_COLOR_PROPS = {
+    "BackgroundColor3",
+    "TextColor3",
+    "TextStrokeColor3",
+    "ImageColor3",
+    "BorderColor3",
+    "Color",  -- UIStroke
+}
+
+local function snapshotColors(root)
+    if not root then return nil end
+    local snap = {}
+    local ok = pcall(function()
+        for _, desc in ipairs(root:GetDescendants()) do
+            local entry = nil
+            for _, prop in ipairs(SNAPSHOT_COLOR_PROPS) do
+                local ok2, val = pcall(function() return desc[prop] end)
+                if ok2 and typeof(val) == "Color3" then
+                    entry = entry or {}
+                    entry[prop] = val
+                end
+            end
+            if entry then snap[desc] = entry end
+        end
+    end)
+    return ok and snap or nil
+end
+
+local function tweenFromSnapshot(snap, time)
+    if not snap then return end
+    for inst, props in pairs(snap) do
+        if inst and inst.Parent then
+            for prop, oldColor in pairs(props) do
+                local newColor = inst[prop]
+                if typeof(newColor) == "Color3" then
+                    local dr = math.abs(newColor.R - oldColor.R)
+                    local dg = math.abs(newColor.G - oldColor.G)
+                    local db = math.abs(newColor.B - oldColor.B)
+                    -- Skip properties that didn't meaningfully change
+                    if dr > 0.005 or dg > 0.005 or db > 0.005 then
+                        inst[prop] = oldColor
+                        TweenService:Create(
+                            inst,
+                            TweenInfo.new(time, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+                            { [prop] = newColor }
+                        ):Play()
+                    end
+                end
+            end
+        end
+    end
+end
+
+-- ============================================================
+-- Utility
+-- ============================================================
 local function isPrimaryPointer(input)
     return input.UserInputType == Enum.UserInputType.MouseButton1
         or input.UserInputType == Enum.UserInputType.Touch
 end
 
+-- ============================================================
+-- CreateWindow
+-- ============================================================
 function LucidUI:CreateWindow(config)
     config = config or {}
 
@@ -64,6 +148,7 @@ function LucidUI:CreateWindow(config)
     W._customThemeActive = false
     W._currentConfig     = "default"
     W._backgroundUrl     = nil
+    W._themeApplied      = false   -- [NEW] gates first-run tween skip
 
     W._width  = config.Width  or 620
     W._height = config.Height or 460
@@ -164,7 +249,6 @@ function LucidUI:CreateWindow(config)
     })
     W._settingsBtn = settingsBtn
 
-    -- [NEW] Tooltip
     if LucidUI._AttachTooltip then
         LucidUI._AttachTooltip(settingsBtn, "Settings", { Position = "bottom" })
     end
@@ -214,7 +298,6 @@ function LucidUI:CreateWindow(config)
     })
     Corner(999, minBtn)
 
-    -- [NEW] Tooltip
     if LucidUI._AttachTooltip then
         LucidUI._AttachTooltip(minBtn, "Minimize to pill", { Position = "bottom" })
     end
@@ -257,7 +340,6 @@ function LucidUI:CreateWindow(config)
     })
     Corner(999, closeBtn)
 
-    -- [NEW] Tooltip
     if LucidUI._AttachTooltip then
         LucidUI._AttachTooltip(closeBtn, "Close", { Position = "bottom" })
     end
@@ -416,7 +498,7 @@ function LucidUI:CreateWindow(config)
     end)
 
     -- ============================================================
-    -- [PATCHED] Drag with edge resistance
+    -- Drag with edge resistance
     -- ============================================================
     table.insert(W._conns, UserInputService.InputChanged:Connect(function(input)
         if input ~= gesture.input then return end
@@ -426,7 +508,6 @@ function LucidUI:CreateWindow(config)
             local rawX = gesture.mainStartPos.X.Offset + d.X
             local rawY = gesture.mainStartPos.Y.Offset + d.Y
 
-            -- Rubber-band damping against viewport edges
             local cam = Camera or workspace.CurrentCamera
             if cam and W.Main then
                 local vp = cam.ViewportSize
@@ -461,7 +542,7 @@ function LucidUI:CreateWindow(config)
     end))
 
     -- ============================================================
-    -- [PATCHED] Release with spring-back
+    -- Release with spring-back
     -- ============================================================
     table.insert(W._conns, UserInputService.InputEnded:Connect(function(input)
         if input ~= gesture.input then return end
@@ -505,7 +586,7 @@ function LucidUI:CreateWindow(config)
     end))
 
     -- ============================================================
-    -- Settings panel
+    -- Settings panel (structure only — content populated lazily)
     -- ============================================================
     W.SettingsPanel = Create("CanvasGroup", {
         Name = "SettingsPanel",
@@ -680,7 +761,6 @@ function LucidUI:CreateWindow(config)
         )
     end))
 
-    -- [PATCHED] Pill release with spring-back
     table.insert(W._conns, UserInputService.InputEnded:Connect(function(input)
         if input ~= pillGesture.input then return end
         ClampPosition(W.FloatingPill, {
@@ -732,6 +812,9 @@ function LucidUI:CreateWindow(config)
     return W
 end
 
+-- ============================================================
+-- Window methods
+-- ============================================================
 function LucidUI.Window:MinimizeToPill()
     if not self.FloatingPill then return end
     self.Floating = true
@@ -834,9 +917,19 @@ function LucidUI.Window:TogglePillMode()
     end
 end
 
+-- ============================================================
+-- [FIX] ToggleSettings — lazy-builds the settings panel
+-- ============================================================
 function LucidUI.Window:ToggleSettings(state)
     if state == nil then state = not self.SettingsOpen end
     self.SettingsOpen = state
+
+    -- [FIX] Build on first open. BuildSettingsPanel() is idempotent
+    -- (checks self._settingsBuilt internally) so this is safe to
+    -- call every open.
+    if state and not self._settingsBuilt then
+        self:BuildSettingsPanel()
+    end
 
     local SHOWN  = UDim2.new(0, 0, 0, 45)
     local HIDDEN = UDim2.new(0, 0, 0, 85)
@@ -1013,8 +1106,19 @@ function LucidUI.Window:SetTheme(name)
     self:LoadCustomTheme(name)
 end
 
+-- ============================================================
+-- [FIX] SetThemeObject — snapshot + tween pass for smooth transition
+-- ============================================================
 function LucidUI.Window:SetThemeObject(t)
     if not t then return end
+
+    -- Snapshot every Color3 property in the Gui tree BEFORE any
+    -- assignments. Skip on the very first application so the initial
+    -- theme doesn't fight the window entrance animation.
+    local snap = nil
+    if self._themeApplied and self.Gui then
+        snap = snapshotColors(self.Gui)
+    end
 
     TweenColor(self.Main, "BackgroundColor3", t.Background, 0.30)
     if not (self._bgImage and self._bgImage.Visible) then
@@ -1062,9 +1166,20 @@ function LucidUI.Window:SetThemeObject(t)
         end
     end
 
+    -- All element callbacks fire here — they do direct assignment,
+    -- so the entire tree snaps to the new theme for one frame.
     for _, fn in ipairs(self._themeElements) do
         pcall(fn, t)
     end
+
+    -- Now walk the snapshot. Every property that changed gets reset
+    -- to its pre-theme value and tweened to the new value. This
+    -- replaces the instant assignment from the callback pass above.
+    if snap then
+        tweenFromSnapshot(snap, 0.30)
+    end
+
+    self._themeApplied = true
 end
 
 function LucidUI.Window:SetAccent(c)
