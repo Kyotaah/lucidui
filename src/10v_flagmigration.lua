@@ -1,90 +1,96 @@
 -- ============================================================
--- Module: 10v_flagmigration.lua
+-- Module: 10w_flagmigration.lua
 -- ============================================================
 --[[
-    Flag Migration — register a mapping from an old flag name to
-    its new name. When LoadConfig encounters an old flag, it's
-    rewritten to the new name before applying.
+    Flag Migration — allows renaming a flag while still reading
+    old configs that used the original name.
 
-    Usage in your hub script:
-      LucidUI:RegisterFlagAlias("auto_parry", "parry_enabled")
+    Usage:
+        -- Old flag was "auto_parry", now it's "parry_enabled":
+        LucidUI:RegisterFlagAlias("auto_parry", "parry_enabled")
 
-    Then when a user loads an old config with `auto_parry`, the
-    library transparently applies it to the `parry_enabled` element.
+    Implementation:
+      Adds an __index metatable to each window's _elementsByFlag
+      table. When a lookup misses, it consults the alias map.
+      Old config files load cleanly, no data lost.
 
-    Non-destructive: the config file itself isn't modified on
-    disk until the next SaveConfig. The mapping is only applied
-    at load time.
+    Also migrates config data on save: when SaveConfig runs, any
+    alias-keyed data in _configData is dropped (it's stale) and
+    the current flag is used instead.
 ]]
 
 do
 
-if not LucidUI or not Compat then return end
+if not LucidUI or not LucidUI.Window then return end
 
 LucidUI._flagAliases = LucidUI._flagAliases or {}
 
+-- ------------------------------------------------------------
+-- Public registration
+-- ------------------------------------------------------------
 function LucidUI:RegisterFlagAlias(oldFlag, newFlag)
-    if type(oldFlag) ~= "string" or type(newFlag) ~= "string" then
-        warn("[LucidUI] RegisterFlagAlias: both args must be strings")
-        return false
-    end
+    if type(oldFlag) ~= "string" or oldFlag == "" then return end
+    if type(newFlag) ~= "string" or newFlag == "" then return end
+
     self._flagAliases[oldFlag] = newFlag
+
+    -- Retrofit any already-created windows
+    for _, W in ipairs(self._windows or {}) do
+        local el = W._elementsByFlag[newFlag]
+        if el then
+            rawset(W._elementsByFlag, oldFlag, el)
+        end
+    end
+
     return true
 end
 
-function LucidUI:ResolveFlag(flag)
-    local seen = {}
-    while self._flagAliases[flag] do
-        if seen[flag] then break end  -- cycle guard
-        seen[flag] = true
-        flag = self._flagAliases[flag]
-    end
-    return flag
+function LucidUI:GetFlagAliases()
+    return self._flagAliases
 end
 
--- Hook LoadConfig indirectly by wrapping the element lookup.
--- We can't patch `_elementsByFlag` directly, so we intercept at
--- the LoadConfig level. Every module that has its own LoadConfig
--- (per-game configs) also benefits because it eventually calls
--- `window:LoadConfig` or reads `_elementsByFlag` via the same path.
-local _origLoadConfig = LucidUI.Window.LoadConfig
-function LucidUI.Window:LoadConfig(profileName)
-    -- Before loading, translate old flag names in the raw JSON
-    local path = "LucidUI/Configs/" .. (profileName or "default") .. ".json"
-    local raw = Compat.read(path)
-    if raw then
-        local data = Compat.decode(raw)
-        if type(data) == "table" and type(data.elements) == "table" then
-            local rewritten = false
-            local newElements = {}
-            for flag, value in pairs(data.elements) do
-                local resolved = LucidUI:ResolveFlag(flag)
-                if resolved ~= flag then
-                    rewritten = true
-                end
-                newElements[resolved] = value
-            end
-            if rewritten then
-                data.elements = newElements
-                local encoded = Compat.encode(data)
-                if encoded then
-                    -- Write the migrated version to a temp path,
-                    -- load it, then clean up
-                    local tmpPath = path .. ".migrated"
-                    Compat.write(tmpPath, encoded)
-
-                    -- Temporarily swap the file, run LoadConfig, swap back
-                    local backup = raw
-                    Compat.write(path, encoded)
-                    local result = _origLoadConfig(self, profileName)
-                    Compat.write(path, backup)
-                    Compat.delete(tmpPath)
-                    return result
-                end
-            end
+function LucidUI:ClearFlagAliases()
+    self._flagAliases = {}
+    for _, W in ipairs(self._windows or {}) do
+        local t = W._elementsByFlag
+        for oldFlag in pairs(self._flagAliases) do
+            rawset(t, oldFlag, nil)
         end
     end
-    return _origLoadConfig(self, profileName)
+end
+
+-- ------------------------------------------------------------
+-- Install metatable on a window's element table
+-- ------------------------------------------------------------
+local function installMetatable(W)
+    local t = W._elementsByFlag
+    if getmetatable(t) then return end
+
+    setmetatable(t, {
+        __index = function(_, key)
+            local aliases = LucidUI._flagAliases
+            if aliases and aliases[key] then
+                return rawget(t, aliases[key])
+            end
+            return nil
+        end,
+    })
+end
+
+-- ------------------------------------------------------------
+-- Hook CreateWindow
+-- ------------------------------------------------------------
+local _origCreateWindow = LucidUI.CreateWindow
+function LucidUI:CreateWindow(config)
+    local W = _origCreateWindow(self, config)
+    if W and W._elementsByFlag then
+        task.defer(function()
+            if W._elementsByFlag then
+                pcall(installMetatable, W)
+            end
+        end)
+    end
+    return W
 end
 
 LucidUI:OnCleanup(function()
