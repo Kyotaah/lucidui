@@ -3,13 +3,22 @@
 LucidUI build script.
 
 Concatenates every .lua file in src/ (sorted by filename) into a single
-dist/lucidui.lua file. The output is what users loadstring from GitHub.
+dist/lucidui.lua file.
 
-Some modules are wrapped in `do ... end` blocks to avoid Luau's 200-local
-register limit. Wrapping a module opens a fresh register frame, so its
-top-level locals are freed once the block ends — even if captured as
-upvalues by closures. This keeps the total count under the limit across
-the entire concatenated chunk.
+Two invariants enforced by this build:
+
+  1. No module may leave a top-level `return` in the concatenated
+     output. Such a return would either be the last statement of the
+     whole chunk (fine but redundant) or appear mid-chunk, which is a
+     Lua syntax error: `Expected <eof>, got 'do'`. We strip them all.
+
+  2. The final dist ends with a single `return LucidUI` so callers can
+     use the standalone-load convenience:
+
+         local LucidUI = loadstring(game:HttpGet(url))()
+
+     That works because `LucidUI` is a *global* by the time 02_themes
+     runs (`LucidUI = getgenv().LucidUI`), so it's in scope at EOF.
 
 Usage:
     python build.py
@@ -19,6 +28,7 @@ Output:
 """
 
 import os
+import re           # ← PATCH: needed for strip_top_level_returns
 import sys
 import hashlib
 from datetime import datetime, timezone
@@ -31,7 +41,7 @@ ROOT     = Path(__file__).resolve().parent
 SRC_DIR  = ROOT / "src"
 DIST_DIR = ROOT / "dist"
 OUTPUT   = DIST_DIR / "lucidui.lua"
-VERSION  = "0.9.0"
+VERSION  = "0.10.0"          # ← PATCH: matches 02_themes.lua's _version
 
 # ------------------------------------------------------------------
 # Modules that get wrapped in `do ... end`.
@@ -66,6 +76,25 @@ def fail(msg):
 
 def short_hash(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()[:8]
+
+# ------------------------------------------------------------------
+# ← PATCH: strip top-level returns before concatenation
+# ------------------------------------------------------------------
+_TOP_LEVEL_RETURN = re.compile(r'^return\b[^\n]*$', re.MULTILINE)
+
+def strip_top_level_returns(source: str):
+    """
+    Remove any top-level `return ...` statement (a line starting with
+    `return` at column 0). Indented returns — inside functions, if
+    blocks, loops — are left alone, since they're valid wherever they
+    appear.
+
+    Returns (cleaned_source, count_stripped).
+    """
+    count = len(_TOP_LEVEL_RETURN.findall(source))
+    if count:
+        source = _TOP_LEVEL_RETURN.sub('', source)
+    return source, count
 
 # ------------------------------------------------------------------
 # Collect sources
@@ -105,12 +134,18 @@ def make_header(file_list):
 """
 
 def make_footer(content_hash):
+    # ← PATCH: single top-level return at EOF, so loadstring(...)()
+    #   still hands back the LucidUI table to callers that want it.
+    #   `LucidUI` is a global set in 01b_polish / 02_themes, so it's
+    #   in scope here.
     return f"""
 
 --[[
     -- End of LucidUI v{VERSION} --
     Build: {content_hash}
 ]]
+
+return LucidUI
 """
 
 # ------------------------------------------------------------------
@@ -131,11 +166,13 @@ def wrap_module(path, content):
     )
     body = content.rstrip()
 
+    # ← PATCH: strip top-level returns BEFORE wrapping/concatenating.
+    body, stripped = strip_top_level_returns(body)
+    if stripped:
+        log(f"  stripped {stripped} top-level return(s) from {path.name}")
+
     if path.name in WRAP_MODULES:
         # Fresh register frame: locals inside are freed at `end`.
-        # Indentation is intentionally omitted — Luau doesn't care, and
-        # indenting thousands of lines of a wrapped module adds noise
-        # without benefit. The banner comment still marks the module.
         return banner + "do\n" + body + "\nend\n\n"
 
     return banner + body + "\n\n"
