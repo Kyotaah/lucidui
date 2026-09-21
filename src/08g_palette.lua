@@ -5,6 +5,7 @@
 -- ============================================================
 -- Registry
 -- ============================================================
+do
 local Registry = {}
 
 local function extractName(frame)
@@ -604,3 +605,4 @@ LucidUI:OnCleanup(function()
     Registry = {}
     print("[LucidUI] Palette cleaned up")
 end)
+end
