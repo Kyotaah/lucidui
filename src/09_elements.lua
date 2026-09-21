@@ -3213,4 +3213,3 @@ getgenv().LucidUI_ActiveWindows = LucidUI._windows
 
 print("[LucidUI] v" .. LucidUI._version .. " loaded")
 
-return LucidUI
