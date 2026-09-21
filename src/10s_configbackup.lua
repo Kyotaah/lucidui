@@ -2,173 +2,173 @@
 -- Module: 10s_configbackup.lua
 -- ============================================================
 --[[
-    Config Backup — every SaveConfig rotates the current file to
-    .bak1, .bak1 to .bak2, up to .bak5. Also writes a metadata
-    sidecar with lastUsed, createdAt, elementCount, themeName.
+    Config Backup + Metadata.
 
-    Provides:
-      LucidUI.Backup:ListFor(configName)  -> { {slot, meta}, ... }
-      LucidUI.Backup:Restore(configName, slot) -> bool
-      LucidUI.Backup:PruneStale()  -- not needed, rotation is bounded
+    On every SaveConfig:
+      • Rotates current.json -> current.bak1.json -> .bak2.json ... -> .bak5.json
+      • Writes {name}.meta.json with lastUsed, createdAt, elementCount, themeName
 
-    The settings panel gets a "Restore from backup" submenu
-    appended automatically under the Configs section.
+    On every LoadConfig:
+      • Updates lastUsed in the meta sidecar
+
+    Public API:
+      LucidUI.ConfigBackup.ListBackups(name) -> { 1, 2, 3, 4, 5 }
+      LucidUI.ConfigBackup.RestoreBackup(name, index) -> bool
 ]]
 
 do
 
-if not LucidUI or not Compat then return end
-
-LucidUI.Backup = {}
-local Backup = LucidUI.Backup
-
-local MAX_BACKUPS = 5
+if not LucidUI or not LucidUI.Window then return end
 
 -- ------------------------------------------------------------
--- Paths
+-- File helpers (guarded for executors without FS)
 -- ------------------------------------------------------------
-local function basePath(name)
-    return "LucidUI/Configs/" .. name .. ".json"
+local function isFile(path)
+    if type(isfile) ~= "function" then return false end
+    local ok, res = pcall(isfile, path)
+    return ok and res == true
 end
 
-local function bakPath(name, slot)
-    return "LucidUI/Configs/" .. name .. ".bak" .. slot .. ".json"
+local function readFile(path)
+    if type(readfile) ~= "function" then return nil end
+    local ok, content = pcall(readfile, path)
+    return ok and content or nil
 end
 
-local function metaPath(name)
-    return "LucidUI/Configs/" .. name .. ".meta.json"
+local function writeFile(path, content)
+    if type(writefile) ~= "function" then return false end
+    return (pcall(writefile, path, content))
+end
+
+local function deleteFile(path)
+    if type(delfile) ~= "function" then return false end
+    return (pcall(delfile, path))
+end
+
+local function moveFile(from, to)
+    if not isFile(from) then return false end
+    local content = readFile(from)
+    if not content then return false end
+    if isFile(to) then deleteFile(to) end
+    if not writeFile(to, content) then return false end
+    deleteFile(from)
+    return true
+end
+
+-- ------------------------------------------------------------
+-- Path helpers
+-- ------------------------------------------------------------
+local CONFIG_DIR = "LucidUI/Configs"
+
+local function configPath(name)   return CONFIG_DIR .. "/" .. tostring(name) .. ".json" end
+local function metaPath(name)     return CONFIG_DIR .. "/" .. tostring(name) .. ".meta.json" end
+local function backupPath(name, i)
+    return CONFIG_DIR .. "/" .. tostring(name) .. ".bak" .. i .. ".json"
 end
 
 -- ------------------------------------------------------------
 -- Rotation
 -- ------------------------------------------------------------
+local MAX_BACKUPS = 5
+
 local function rotateBackups(name)
-    -- Move bak4 -> bak5, bak3 -> bak4, ..., bak1 -> bak2
-    for slot = MAX_BACKUPS - 1, 1, -1 do
-        local src = bakPath(name, slot)
-        local dst = bakPath(name, slot + 1)
-        local content = Compat.read(src)
-        if content then
-            Compat.write(dst, content)
-            Compat.delete(src)
-        end
+    -- Delete the oldest first (bak5)
+    deleteFile(backupPath(name, MAX_BACKUPS))
+
+    -- Slide everything up: bak4 -> bak5, bak3 -> bak4, ...
+    for i = MAX_BACKUPS - 1, 1, -1 do
+        moveFile(backupPath(name, i), backupPath(name, i + 1))
     end
-    -- Current file -> bak1
-    local current = Compat.read(basePath(name))
-    if current then
-        Compat.write(bakPath(name, 1), current)
-    end
+
+    -- Current -> bak1
+    moveFile(configPath(name), backupPath(name, 1))
 end
 
 -- ------------------------------------------------------------
--- Metadata
+-- Metadata sidecar
 -- ------------------------------------------------------------
-local function writeMeta(name, data)
-    local meta = {
-        name         = name,
-        lastUsed     = os.time(),
-        elementCount = 0,
-        themeName    = data.theme or "Default",
-    }
-    if type(data.elements) == "table" then
-        for _ in pairs(data.elements) do
-            meta.elementCount = meta.elementCount + 1
-        end
-    end
-    -- Preserve createdAt if it already exists
-    local existing = Compat.read(metaPath(name))
-    if existing then
-        local prev = Compat.decode(existing)
-        if type(prev) == "table" and prev.createdAt then
-            meta.createdAt = prev.createdAt
-        end
-    end
-    if not meta.createdAt then meta.createdAt = meta.lastUsed end
+local function readMeta(name)
+    local raw = readFile(metaPath(name))
+    if not raw then return {} end
+    local data = Compat.decode(raw)
+    return type(data) == "table" and data or {}
+end
 
+local function writeMeta(name, meta)
     local encoded = Compat.encode(meta)
-    if encoded then Compat.write(metaPath(name), encoded) end
+    if encoded then writeFile(metaPath(name), encoded) end
 end
 
-function Backup:GetMeta(name)
-    local raw = Compat.read(metaPath(name))
-    if not raw then return nil end
-    return Compat.decode(raw)
+local function touchMetaOnSave(W, name)
+    local meta = readMeta(name)
+    meta.createdAt   = meta.createdAt or os.time()
+    meta.lastUsed    = os.time()
+    meta.elementCount = 0
+    for _ in pairs(W._elementsByFlag or {}) do
+        meta.elementCount = meta.elementCount + 1
+    end
+    meta.themeName = W._customThemeActive and "Custom" or (W.ThemeName or "Default")
+    meta.version   = "0.10.0"
+    writeMeta(name, meta)
+end
+
+local function touchMetaOnLoad(name)
+    local meta = readMeta(name)
+    if next(meta) == nil then return end
+    meta.lastUsed = os.time()
+    writeMeta(name, meta)
 end
 
 -- ------------------------------------------------------------
--- Listing backups
+-- Hook SaveConfig / LoadConfig
 -- ------------------------------------------------------------
-function Backup:ListFor(name)
+local _origSave = LucidUI.Window.SaveConfig
+function LucidUI.Window:SaveConfig(name)
+    name = name or "default"
+    pcall(rotateBackups, name)
+    local result = _origSave(self, name)
+    pcall(touchMetaOnSave, self, name)
+    return result
+end
+
+local _origLoad = LucidUI.Window.LoadConfig
+function LucidUI.Window:LoadConfig(name)
+    name = name or "default"
+    local result = _origLoad(self, name)
+    pcall(touchMetaOnLoad, name)
+    return result
+end
+
+-- ------------------------------------------------------------
+-- Public API
+-- ------------------------------------------------------------
+LucidUI.ConfigBackup = LucidUI.ConfigBackup or {}
+
+function LucidUI.ConfigBackup.ListBackups(name)
     local out = {}
-    for slot = 1, MAX_BACKUPS do
-        local content = Compat.read(bakPath(name, slot))
-        if content then
-            local decoded = Compat.decode(content)
-            local elemCount = 0
-            if decoded and type(decoded.elements) == "table" then
-                for _ in pairs(decoded.elements) do
-                    elemCount = elemCount + 1
-                end
-            end
-            table.insert(out, {
-                slot         = slot,
-                size         = #content,
-                elementCount = elemCount,
-                themeName    = decoded and decoded.theme or "?",
-            })
-        end
+    for i = 1, MAX_BACKUPS do
+        if isFile(backupPath(name, i)) then table.insert(out, i) end
     end
     return out
 end
 
--- ------------------------------------------------------------
--- Restore
--- ------------------------------------------------------------
-function Backup:Restore(name, slot)
-    if type(name) ~= "string" or type(slot) ~= "number" then return false end
-    if slot < 1 or slot > MAX_BACKUPS then return false end
-
-    local content = Compat.read(bakPath(name, slot))
+function LucidUI.ConfigBackup.RestoreBackup(name, index)
+    local path = backupPath(name, index)
+    if not isFile(path) then return false end
+    local content = readFile(path)
     if not content then return false end
-
-    -- Rotate the current file out before overwriting so the user
-    -- can undo a restore if they pick the wrong backup
-    rotateBackups(name)
-
-    Compat.write(basePath(name), content)
+    if not writeFile(configPath(name), content) then return false end
+    LucidUI:Notify({
+        Title = "Backup Restored",
+        Message = name .. " from .bak" .. index,
+        Variant = "success",
+        Duration = 3,
+    })
     return true
 end
 
--- ------------------------------------------------------------
--- Hook SaveConfig
--- ------------------------------------------------------------
-local function hookWindow(W)
-    if W._backupHooked then return end
-    W._backupHooked = true
-
-    local _origSave = W.SaveConfig
-    W.SaveConfig = function(self, profileName)
-        profileName = profileName or "default"
-        -- Rotate BEFORE the save writes over the current file
-        pcall(rotateBackups, profileName)
-        local result = _origSave(self, profileName)
-        -- Write metadata after the save completes
-        pcall(function()
-            local content = Compat.read(basePath(profileName))
-            if content then
-                local data = Compat.decode(content) or {}
-                writeMeta(profileName, data)
-            end
-        end)
-        return result
-    end
-end
-
-local _origCreateWindow = LucidUI.CreateWindow
-function LucidUI:CreateWindow(config)
-    local W = _origCreateWindow(self, config)
-    task.defer(function() pcall(hookWindow, W) end)
-    return W
+function LucidUI.ConfigBackup.GetMeta(name)
+    return readMeta(name)
 end
 
 LucidUI:OnCleanup(function()
