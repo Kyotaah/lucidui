@@ -5,6 +5,12 @@ LucidUI build script.
 Concatenates every .lua file in src/ (sorted by filename) into a single
 dist/lucidui.lua file. The output is what users loadstring from GitHub.
 
+Some modules are wrapped in `do ... end` blocks to avoid Luau's 200-local
+register limit. Wrapping a module opens a fresh register frame, so its
+top-level locals are freed once the block ends — even if captured as
+upvalues by closures. This keeps the total count under the limit across
+the entire concatenated chunk.
+
 Usage:
     python build.py
 
@@ -26,6 +32,27 @@ SRC_DIR  = ROOT / "src"
 DIST_DIR = ROOT / "dist"
 OUTPUT   = DIST_DIR / "lucidui.lua"
 VERSION  = "0.9.0"
+
+# ------------------------------------------------------------------
+# Modules that get wrapped in `do ... end`.
+#
+# Every top-level `local` in a Luau chunk consumes one of 200 register
+# slots. Modules listed here have their locals freed the moment their
+# wrapping block ends, so they don't count toward the limit.
+#
+# Only add a module here if:
+#   1. It does NOT define locals consumed by other modules by name.
+#   2. It DOES expose its API through LucidUI.* / Compat.* / globals.
+#
+# NEVER wrap these (they define shared locals used everywhere):
+#   00_compat.lua, 01_helpers.lua, 01b_polish.lua,
+#   02_themes.lua, 03_icons.lua
+# ------------------------------------------------------------------
+WRAP_MODULES = {
+    "08f_webhook.lua",         # ~29 locals freed
+    "08g_palette.lua",         # ~16 locals freed
+    "08k_pergameconfigs.lua",  # ~14 locals freed
+}
 
 # ------------------------------------------------------------------
 # Helpers
@@ -54,7 +81,8 @@ def collect_sources():
     log(f"found {len(files)} source file(s):")
     for f in files:
         size = f.stat().st_size
-        log(f"  - {f.name} ({size} bytes)")
+        wrapped = " [wrapped]" if f.name in WRAP_MODULES else ""
+        log(f"  - {f.name} ({size} bytes){wrapped}")
     return files
 
 # ------------------------------------------------------------------
@@ -101,7 +129,16 @@ def wrap_module(path, content):
         f"-- Module: {path.name}\n"
         "-- ============================================================\n"
     )
-    return banner + content.rstrip() + "\n\n"
+    body = content.rstrip()
+
+    if path.name in WRAP_MODULES:
+        # Fresh register frame: locals inside are freed at `end`.
+        # Indentation is intentionally omitted — Luau doesn't care, and
+        # indenting thousands of lines of a wrapped module adds noise
+        # without benefit. The banner comment still marks the module.
+        return banner + "do\n" + body + "\nend\n\n"
+
+    return banner + body + "\n\n"
 
 # ------------------------------------------------------------------
 # Build
