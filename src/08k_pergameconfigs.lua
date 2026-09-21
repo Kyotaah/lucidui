@@ -32,6 +32,7 @@
 -- ============================================================
 -- Config helpers
 -- ============================================================
+do
 LucidUI.GameConfigs = {}
 local GC = LucidUI.GameConfigs
 
@@ -761,3 +762,4 @@ end
 LucidUI:OnCleanup(function()
     print("[LucidUI] PerGameConfigs cleaned up")
 end)
+end
