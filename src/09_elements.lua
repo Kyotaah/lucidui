@@ -904,10 +904,13 @@ function LucidUI.Section:CreateDropdown(config)
         })
     end
 
-    local list = Create("Frame", {
+    -- [FIX] CanvasGroup instead of Frame for smooth reveal
+    local list = Create("CanvasGroup", {
         Size = UDim2.new(1, -20, 0, 0),
         Position = UDim2.fromOffset(10, ROW_H + SEARCH_H + 4),
-        BackgroundTransparency = 1, ClipsDescendants = true, ZIndex = 3, Parent = row,
+        BackgroundTransparency = 1, ClipsDescendants = true,
+        GroupTransparency = 1,
+        ZIndex = 3, Parent = row,
     })
     Create("UIListLayout", {
         Padding = UDim.new(0, OPT_P), SortOrder = Enum.SortOrder.LayoutOrder, Parent = list,
@@ -949,7 +952,7 @@ function LucidUI.Section:CreateDropdown(config)
                     value = optVal
                     valueLabel.Text = tostring(optVal)
                     expanded = false
-                    Tween(list, 0.22, { Size = UDim2.new(1, -20, 0, 0) }):Play()
+                    Tween(list, 0.22, { Size = UDim2.new(1, -20, 0, 0), GroupTransparency = 1 }):Play()
                     Tween(row, 0.22, { Size = UDim2.new(1, 0, 0, ROW_H) }):Play()
                     Tween(arrowLbl, 0.20, { Rotation = 0 }):Play()
                     PlayUISound("click")
@@ -983,13 +986,14 @@ function LucidUI.Section:CreateDropdown(config)
         expanded = not expanded
         local visibleCount = #optionBtns
         local openH = visibleCount * (OPT_H + OPT_P) + 8
-        Tween(list, 0.22, {
+        Tween(list, 0.28, {
             Size = UDim2.new(1, -20, 0, expanded and openH or 0),
+            GroupTransparency = expanded and 0 or 1,
         }, Enum.EasingStyle.Quart):Play()
-        Tween(row, 0.22, {
+        Tween(row, 0.28, {
             Size = UDim2.new(1, 0, 0, expanded and (ROW_H + SEARCH_H + openH + 12) or ROW_H),
         }, Enum.EasingStyle.Quart):Play()
-        Tween(arrowLbl, 0.20, { Rotation = expanded and 180 or 0 }):Play()
+        Tween(arrowLbl, 0.24, { Rotation = expanded and 180 or 0 }):Play()
         PlayUISound("click")
     end)
 
@@ -1026,7 +1030,6 @@ function LucidUI.Section:CreateDropdown(config)
 
     self:_track(row)
 
-    -- [NEW] Tooltip
     if config.Tooltip and LucidUI._AttachTooltip then
         LucidUI._AttachTooltip(row, config.Tooltip)
     end
@@ -1102,9 +1105,12 @@ function LucidUI.Section:CreateMultiDropdown(config)
         ZIndex = 4, Parent = headerBtn,
     })
 
-    local listWrap = Create("Frame", {
+    -- [FIX] CanvasGroup for smooth reveal
+    local listWrap = Create("CanvasGroup", {
         Size = UDim2.new(1, -20, 0, 0), Position = UDim2.fromOffset(10, ROW_H),
-        BackgroundTransparency = 1, ClipsDescendants = true, ZIndex = 3, Parent = row,
+        BackgroundTransparency = 1, ClipsDescendants = true,
+        GroupTransparency = 1,
+        ZIndex = 3, Parent = row,
     })
 
     local scroll = Create("ScrollingFrame", {
@@ -1276,13 +1282,14 @@ function LucidUI.Section:CreateMultiDropdown(config)
         expanded = not expanded
         local fullH = #options * (OPT_H + OPT_P) - OPT_P
         local openH = math.min(fullH + 8, MAX_LIST_H)
-        Tween(listWrap, 0.24, {
+        Tween(listWrap, 0.28, {
             Size = UDim2.new(1, -20, 0, expanded and openH or 0),
+            GroupTransparency = expanded and 0 or 1,
         }, Enum.EasingStyle.Quart):Play()
-        Tween(row, 0.24, {
+        Tween(row, 0.28, {
             Size = UDim2.new(1, 0, 0, expanded and (ROW_H + openH + 8) or ROW_H),
         }, Enum.EasingStyle.Quart):Play()
-        Tween(arrowLbl, 0.20, { Rotation = expanded and 180 or 0 }):Play()
+        Tween(arrowLbl, 0.24, { Rotation = expanded and 180 or 0 }):Play()
         PlayUISound("click")
     end)
 
@@ -1344,7 +1351,6 @@ function LucidUI.Section:CreateMultiDropdown(config)
 
     self:_track(row)
 
-    -- [NEW] Tooltip
     if config.Tooltip and LucidUI._AttachTooltip then
         LucidUI._AttachTooltip(row, config.Tooltip)
     end
