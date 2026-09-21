@@ -1,9 +1,16 @@
+-- ============================================================
+-- Module: 08_tab.lua
+-- ============================================================
 --[[
     Tab + Section — layout containers. Icon builders now live in
     03_icons.lua and are accessed via LucidUI.IconBuilders.
 
     [IMPROVEMENT] Added GetTab, GetSection, SetVisible, SetTitle,
     Destroy. Bigger tap targets. Section arrow animates via rotation.
+
+    [FIX] Section wrapper is now a CanvasGroup. Its GroupTransparency
+    is tweened alongside Size during expand/collapse, so children
+    fade in smoothly instead of popping as the clip region grows.
 ]]
 
 local function IconHolder(parent, size)
@@ -14,7 +21,6 @@ local function IconHolder(parent, size)
     })
 end
 
--- [IMPROVEMENT] Safe recolor that skips nil/destroyed parts.
 local function RecolorIconParts(parts, color)
     if not parts then return end
     for _, p in ipairs(parts) do
@@ -49,7 +55,6 @@ function LucidUI.Window:CreateTab(config)
         builder = LucidUI.IconBuilders.default
     end
 
-    -- [IMPROVEMENT] Taller tab button for mobile
     local TAB_H = 34
     local btn = Create("TextButton", {
         Name = tab.Name,
@@ -99,7 +104,7 @@ function LucidUI.Window:CreateTab(config)
     tab.Button    = btn
     tab.Label     = labelLbl
     tab.IconParts = iconParts
-    tab.Page      = nil -- set below
+    tab.Page      = nil
     tab._visible  = true
 
     btn.MouseEnter:Connect(function()
@@ -185,7 +190,6 @@ function LucidUI.Window:SelectTab(tab)
     self.ActiveTab = tab
 end
 
--- [IMPROVEMENT] Find a tab by name.
 function LucidUI.Window:GetTab(name)
     for _, t in ipairs(self.Tabs) do
         if t.Name == name then return t end
@@ -193,13 +197,11 @@ function LucidUI.Window:GetTab(name)
     return nil
 end
 
--- [IMPROVEMENT] Hide/show a tab.
 function LucidUI.Tab:SetVisible(on)
     self._visible = on and true or false
     self.Button.Visible = self._visible
 
     if not self._visible and self.Window.ActiveTab == self then
-        -- Pick the next visible tab
         for _, t in ipairs(self.Window.Tabs) do
             if t._visible then
                 self.Window:SelectTab(t)
@@ -239,7 +241,6 @@ function LucidUI.Tab:CreateSection(nameOrConfig)
     self._orderCounter = self._orderCounter + 1
 
     if section.Name ~= "" then
-        -- [IMPROVEMENT] Taller header for mobile
         local HEADER_H = 26
         local headerBtn = Create("TextButton", {
             Text = "",
@@ -259,7 +260,7 @@ function LucidUI.Tab:CreateSection(nameOrConfig)
             TextXAlignment = Enum.TextXAlignment.Left,
             Position = UDim2.fromOffset(2, 0),
             Size = UDim2.fromOffset(16, HEADER_H),
-            Rotation = section.Expanded and 0 or -90, -- [IMPROVEMENT] animate via rotation
+            Rotation = section.Expanded and 0 or -90,
             ZIndex = 2,
             Parent = headerBtn,
         })
@@ -300,11 +301,14 @@ function LucidUI.Tab:CreateSection(nameOrConfig)
         end)
     end
 
-    local wrapper = Create("Frame", {
+    -- [FIX] CanvasGroup instead of Frame so GroupTransparency fades
+    -- children as the wrapper grows.
+    local wrapper = Create("CanvasGroup", {
         Name = "Wrapper",
         Size = UDim2.new(1, 0, 0, 0),
         BackgroundTransparency = 1,
         ClipsDescendants = true,
+        GroupTransparency = section.Expanded and 0 or 1,
         LayoutOrder = section._order + 1,
         ZIndex = 2,
         Parent = self.Page,
@@ -387,6 +391,7 @@ function LucidUI.Section:SetExpanded(state, instant)
     if instant then
         wrapper.AutomaticSize = Enum.AutomaticSize.None
         wrapper.Size = UDim2.new(1, 0, 0, state and target or 0)
+        wrapper.GroupTransparency = state and 0 or 1
         container.AutomaticSize = Enum.AutomaticSize.Y
         if state then wrapper.AutomaticSize = Enum.AutomaticSize.Y end
         return
@@ -396,8 +401,10 @@ function LucidUI.Section:SetExpanded(state, instant)
 
     if state then
         wrapper.Size = UDim2.new(1, 0, 0, 0)
+        wrapper.GroupTransparency = 1
     else
         wrapper.Size = UDim2.new(1, 0, 0, target)
+        wrapper.GroupTransparency = 0
     end
 
     local goalH = state and target or 0
@@ -405,12 +412,15 @@ function LucidUI.Section:SetExpanded(state, instant)
     pcall(function()
         TweenService:Create(
             wrapper,
-            TweenInfo.new(0.22, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
-            { Size = UDim2.new(1, 0, 0, goalH) }
+            TweenInfo.new(0.28, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+            {
+                Size = UDim2.new(1, 0, 0, goalH),
+                GroupTransparency = state and 0 or 1,
+            }
         ):Play()
     end)
 
-    task.delay(0.24, function()
+    task.delay(0.30, function()
         if not wrapper.Parent then return end
         container.AutomaticSize = Enum.AutomaticSize.Y
         if self.Expanded then
@@ -419,19 +429,16 @@ function LucidUI.Section:SetExpanded(state, instant)
     end)
 end
 
--- [IMPROVEMENT] Rename a section at runtime.
 function LucidUI.Section:SetTitle(newName)
     if not self.Header then return end
     self.Name = newName
     self.Header.Text = newName:upper()
 end
 
--- [IMPROVEMENT] Count elements.
 function LucidUI.Section:GetElementCount()
     return #self._elements
 end
 
--- [IMPROVEMENT] Remove a section entirely.
 function LucidUI.Section:Destroy()
     if self.HeaderBtn then pcall(function() self.HeaderBtn:Destroy() end) end
     if self.Wrapper   then pcall(function() self.Wrapper:Destroy()   end) end
