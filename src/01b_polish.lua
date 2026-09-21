@@ -28,6 +28,13 @@ local SOUND_IDS = {
 
 -- [FIX] Stable export so 08b_soundpacks.lua can mutate SOUND_IDS
 -- without depending on same-chunk scoping.
+--
+-- 00b_cleanup.lua sets getgenv().LucidUI = nil on every execution,
+-- and 02_themes.lua is the module that actually creates the table.
+-- Since 01b_polish runs before 02_themes, we bootstrap the table
+-- here if it doesn't exist yet. 02_themes reuses the same instance.
+getgenv().LucidUI = getgenv().LucidUI or {}
+LucidUI = getgenv().LucidUI
 LucidUI._SOUND_IDS = SOUND_IDS
 
 local function PlayUISound(kind)
