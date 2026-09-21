@@ -1,119 +1,135 @@
 -- ============================================================
--- Module: 10t_toastactions.lua
+-- Module: 10t_toastaction.lua
 -- ============================================================
 --[[
-    Toast Action Buttons — extends Notify to support an action
-    button on the right side of any toast.
+    Toast Action Buttons — adds an optional action button to any
+    notification via a new `Action` field on the config.
 
     Usage:
-      LucidUI:Notify({
-          Title    = "Config Saved",
-          Message  = "default",
-          Variant  = "success",
-          Action   = {
-              Label    = "Undo",
-              Callback = function() ... end,
-              Timeout  = 5,      -- seconds before the action expires
-              Expired  = function() ... end,  -- optional
-          },
-      })
+        LucidUI:Notify({
+            Title = "Config Saved",
+            Message = "default",
+            Variant = "success",
+            Action = {
+                Label = "Undo",
+                Callback = function() W:LoadConfig("__prev") end,
+            },
+            ActionTimeout = 5,
+            ActionExpired = function() print("User didn't undo") end,
+        })
 
-    The action button:
-      • Sits on the right side of the toast
-      • Fades out after Timeout seconds
-      • Clicking fires Callback and dismisses the toast
-      • If the toast auto-dismisses first, Expired fires instead
-
-    Implementation: wraps LucidUI._renderNotification so the
-    internal toast renderer doesn't need to be patched.
+    Hooks the internal _renderNotification so it works for both
+    direct calls and queued notifications.
 ]]
 
 do
 
-if not LucidUI or not LucidUI.Window then return end
+if not LucidUI or not LucidUI._renderNotification then return end
 
-local function attachAction(card, config, accent)
-    if not card or not card.Parent then return end
+-- ------------------------------------------------------------
+-- Find the bottom spacer in a rendered notification card
+-- ------------------------------------------------------------
+local function findSpacer(card)
+    for _, c in ipairs(card:GetChildren()) do
+        if c:IsA("Frame")
+           and c.BackgroundTransparency == 1
+           and c.Size.X.Scale == 1
+           and c.Size.Y.Scale == 0
+           and c.Size.Y.Offset == 14 then
+            return c
+        end
+    end
+    return nil
+end
+
+-- ------------------------------------------------------------
+-- Attach the action button
+-- ------------------------------------------------------------
+local function attachAction(card, config)
     if type(config.Action) ~= "table" then return end
+    if type(config.Action.Label) ~= "string" then return end
 
-    local action = config.Action
-    local label  = action.Label or "Action"
-    local timeout = action.Timeout or 5
+    local theme = config.Theme or LucidUI._lastTheme or LucidUI.Themes.Default
+    local VARIANT_COLORS = {
+        info    = Color3.fromRGB(90, 180, 255),
+        success = Color3.fromRGB(90, 210, 130),
+        warn    = Color3.fromRGB(255, 189, 46),
+        error   = Color3.fromRGB(255, 95, 87),
+    }
+    local variant = config.Variant or "default"
+    local accent = config.Accent or VARIANT_COLORS[variant] or theme.Accent
 
-    -- Shrink the toast's message area to make room for the button
-    -- We can't easily resize existing labels without knowing their
-    -- references, so we just overlay a button that covers the
-    -- right side and let the labels truncate naturally.
+    -- Reserve vertical space so the button doesn't overlap the message
+    local spacer = findSpacer(card)
+    if spacer then
+        spacer.Size = UDim2.new(1, 0, 0, 44)
+    end
 
     local btn = Create("TextButton", {
-        Text = label,
+        Text = config.Action.Label,
         Font = Enum.Font.GothamBold,
-        TextSize = 12,
+        TextSize = 11,
         TextColor3 = accent,
         BackgroundColor3 = accent,
         BackgroundTransparency = 0.85,
         AutoButtonColor = false,
-        Size = UDim2.fromOffset(64, 26),
-        Position = UDim2.new(1, -74, 0.5, -13),
-        ZIndex = 100,
+        AnchorPoint = Vector2.new(1, 1),
+        Position = UDim2.new(1, -12, 1, -12),
+        Size = UDim2.fromOffset(0, 22),
+        AutomaticSize = Enum.AutomaticSize.X,
+        ZIndex = 10,
         Parent = card,
     })
     Corner(6, btn)
-
-    local fired = false
-
-    local function doCallback()
-        if fired then return end
-        fired = true
-        if type(action.Callback) == "function" then
-            pcall(action.Callback)
-        end
-        pcall(function() card:Destroy() end)
-    end
-
-    BindTap(btn, doCallback, { Sound = false })
+    Create("UIPadding", {
+        PaddingLeft  = UDim.new(0, 10),
+        PaddingRight = UDim.new(0, 10),
+        Parent = btn,
+    })
 
     btn.MouseEnter:Connect(function()
-        Tween(btn, 0.12, { BackgroundTransparency = 0.65 }):Play()
+        Tween(btn, 0.12, { BackgroundTransparency = 0.6 }):Play()
     end)
     btn.MouseLeave:Connect(function()
         Tween(btn, 0.12, { BackgroundTransparency = 0.85 }):Play()
     end)
 
-    -- Auto-expire
-    task.delay(timeout, function()
+    local fired = false
+    local function fire()
         if fired then return end
-        if not btn.Parent then return end
         fired = true
-        Tween(btn, 0.20, { TextTransparency = 1, BackgroundTransparency = 1 }):Play()
-        task.delay(0.22, function() pcall(function() btn:Destroy() end) end)
-        if type(action.Expired) == "function" then
-            pcall(action.Expired)
+        if type(config.Action.Callback) == "function" then
+            Compat.safeCallback(config.Action.Callback)
         end
-    end)
+    end
+
+    BindTap(btn, fire)
+
+    if type(config.ActionTimeout) == "number" and config.ActionTimeout > 0 then
+        task.delay(config.ActionTimeout, function()
+            if fired then return end
+            fired = true
+            if type(config.ActionExpired) == "function" then
+                Compat.safeCallback(config.ActionExpired)
+            end
+        end)
+    end
 end
 
+-- ------------------------------------------------------------
+-- Hook _renderNotification
+-- ------------------------------------------------------------
 local _origRender = LucidUI._renderNotification
 function LucidUI:_renderNotification(config)
     local card = _origRender(self, config)
-    if card and config and config.Action then
-        local theme = config.Theme or LucidUI._lastTheme or LucidUI.Themes.Default
-        local variantData = ({
-            info    = Color3.fromRGB(90, 180, 255),
-            success = Color3.fromRGB(90, 210, 130),
-            warn    = Color3.fromRGB(255, 189, 46),
-            error   = Color3.fromRGB(255, 95, 87),
-        })[config.Variant or "default"]
-        local accent = config.Accent or variantData or theme.Accent
-        task.defer(function()
-            pcall(attachAction, card, config, accent)
-        end)
+    if card and card.Parent then
+        pcall(attachAction, card, config or {})
     end
     return card
 end
 
 LucidUI:OnCleanup(function()
-    print("[LucidUI] ToastActions cleaned up")
+    print("[LucidUI] ToastAction cleaned up")
 end)
 
 end
