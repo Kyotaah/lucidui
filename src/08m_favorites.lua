@@ -5,50 +5,20 @@
     Favorites — a star button in the window header that opens a
     quick-access panel of toggleable features.
 
-    Each favorite tracks its own boolean state, persists to disk,
-    and optionally has a keyboard shortcut. Toggling from the panel
-    or the keyboard keeps them in sync and fires OnChange.
-
     [NEW] Long-press a favorite row to open an inline rebind popup.
-    Tap the key chip inside to start listening, press a new key to
-    bind, Escape to cancel, Delete/Backspace to unbind.
 
-    USAGE
-        LucidUI:RegisterFavorite({
-            Id       = "aim",
-            Name     = "Aim Assist",
-            Category = "Combat",
-            Default  = false,
-            Hotkey   = Enum.KeyCode.R,
-            OnChange = function(state) AimEnabled = state end,
-        })
-
-    API
-        LucidUI:RegisterFavorite(opts)  -> favorite object
-        LucidUI:GetFavorite(id)         -> favorite object
-        LucidUI:GetAllFavorites()       -> { fav, ... }
-        LucidUI:ClearAllFavorites()     -> set every favorite off
-
-    Favorite object:
-        .Id  .Name  .Category  .State  .Hotkey
-        :Get()  :Set(v)  :Toggle()
-        :GetHotkey()  :SetHotkey(kc)  :Destroy()
+    [FIX] The star button reference is now stored on the window as
+    W._favoriteStarBtn so SetMinimized can hide it during pill mode.
 ]]
 
 local UserInputService = game:GetService("UserInputService")
 
--- ============================================================
--- Registry
--- ============================================================
 local FAVORITES = {}
 local ORDER     = {}
 
 LucidUI._favorites     = FAVORITES
 LucidUI._favoriteConns = LucidUI._favoriteConns or {}
 
--- ============================================================
--- Persistence
--- ============================================================
 local SAVE_PATH = "LucidUI/Favorites.json"
 
 local function loadSaved()
@@ -78,9 +48,6 @@ end
 
 local saved = loadSaved()
 
--- ============================================================
--- Favorite object
--- ============================================================
 local Favorite = {}
 Favorite.__index = Favorite
 
@@ -125,9 +92,6 @@ function Favorite:Destroy()
     end
 end
 
--- ============================================================
--- Public registration
--- ============================================================
 function LucidUI:RegisterFavorite(opts)
     opts = opts or {}
     local id = opts.Id
@@ -143,7 +107,6 @@ function LucidUI:RegisterFavorite(opts)
     fav.Category = opts.Category or "General"
     fav.OnChange = opts.OnChange
 
-    -- Resolve initial hotkey: saved wins over default
     local savedName = saved.keys[id]
     if type(savedName) == "string" and savedName ~= "" then
         local ok, kc = pcall(function() return Enum.KeyCode[savedName] end)
@@ -210,9 +173,6 @@ function LucidUI:ClearAllFavorites()
     end
 end
 
--- ============================================================
--- Global hotkey dispatch for favorites
--- ============================================================
 table.insert(LucidUI._favoriteConns,
     UserInputService.InputBegan:Connect(function(input, processed)
         if processed then return end
@@ -227,15 +187,11 @@ table.insert(LucidUI._favoriteConns,
         end
     end))
 
--- ============================================================
--- Header star + dropdown panel
--- ============================================================
 local _origCreateWindow = LucidUI.CreateWindow
 function LucidUI:CreateWindow(config)
     local W = _origCreateWindow(self, config)
     if not W or not W.Header then return W end
 
-    -- ── Star button (left of the settings gear) ────────
     local starBtn = Create("TextButton", {
         Name = "FavoritesStar",
         Text = "",
@@ -245,6 +201,9 @@ function LucidUI:CreateWindow(config)
         ZIndex = 3,
         Parent = W.Header,
     })
+
+    -- [FIX] Expose reference so SetMinimized can hide/show it
+    W._favoriteStarBtn = starBtn
 
     local starGlow = Create("Frame", {
         Size = UDim2.fromOffset(26, 26),
@@ -269,12 +228,10 @@ function LucidUI:CreateWindow(config)
         Parent = starBtn,
     })
 
-        -- [NEW] Tooltip
     if LucidUI._AttachTooltip then
         LucidUI._AttachTooltip(starBtn, "Favorites — quick access toggles", { Position = "bottom" })
     end
 
-    -- ── Dropdown panel ────────────────────────────────
     local panel = Create("Frame", {
         Name = "FavoritesPanel",
         Size = UDim2.fromOffset(250, 80),
@@ -310,7 +267,6 @@ function LucidUI:CreateWindow(config)
         Parent = panelHeader,
     })
 
-    -- Hint text in header
     Create("TextLabel", {
         Text = "hold to rebind",
         Font = Enum.Font.Gotham,
@@ -354,7 +310,6 @@ function LucidUI:CreateWindow(config)
         Parent = list,
     })
 
-    -- ── Rebind popup (created once, reused) ───────────
     local rebindPopup = Create("Frame", {
         Name = "RebindPopup",
         Size = UDim2.fromOffset(220, 130),
@@ -410,7 +365,7 @@ function LucidUI:CreateWindow(config)
     })
     Corner(8, rebindKeyBox)
 
-    local rebindHint = Create("TextLabel", {
+    Create("TextLabel", {
         Text = "Escape to cancel · Del to unbind",
         Font = Enum.Font.Gotham,
         TextSize = 9,
@@ -423,10 +378,9 @@ function LucidUI:CreateWindow(config)
         Parent = rebindPopup,
     })
 
-    -- State machine for the rebind flow
-    local rebindTarget = nil       -- favorite being rebound
-    local rebindListening = false  -- true once key chip is tapped
-    local rebindConn = nil         -- UserInputService.InputBegan connection
+    local rebindTarget = nil
+    local rebindListening = false
+    local rebindConn = nil
 
     local function closeRebind()
         rebindListening = false
@@ -448,7 +402,6 @@ function LucidUI:CreateWindow(config)
         rebindKeyBox.TextColor3 = W.Theme.TextPrimary
         rebindListening = false
 
-        -- Position near the panel, above it
         local scrW = W.Gui.AbsoluteSize.X
         local scrH = W.Gui.AbsoluteSize.Y
         local panelPos = panel.AbsolutePosition
@@ -513,7 +466,6 @@ function LucidUI:CreateWindow(config)
         end
     end)
 
-    -- Close popup on outside click / Escape (when not listening)
     table.insert(W._conns, UserInputService.InputBegan:Connect(function(input)
         if not rebindPopup.Visible then return end
         if rebindListening then return end
@@ -534,7 +486,6 @@ function LucidUI:CreateWindow(config)
         end
     end))
 
-    -- ── Panel open/close ──────────────────────────────
     local panelOpen = false
 
     local function refreshStarVisual()
@@ -579,7 +530,6 @@ function LucidUI:CreateWindow(config)
         refreshStarVisual()
     end
 
-    -- ── Panel rebuild ─────────────────────────────────
     local function rebuildPanel()
         for _, c in ipairs(list:GetChildren()) do
             if not c:IsA("UIListLayout") and not c:IsA("UIPadding") then
@@ -634,7 +584,6 @@ function LucidUI:CreateWindow(config)
                 Parent = row,
             })
 
-            -- Hotkey chip (clickable to open rebind, or shows "–" if unbound)
             local chip = Create("TextButton", {
                 Text = fav.Hotkey and fav.Hotkey.Name or "–",
                 Font = Enum.Font.GothamBold,
@@ -658,7 +607,6 @@ function LucidUI:CreateWindow(config)
                 Tween(chip, 0.12, { BackgroundTransparency = 0.5 }):Play()
             end)
 
-            -- Toggle switch
             local track = Create("Frame", {
                 Size = UDim2.fromOffset(34, 18),
                 Position = UDim2.new(1, -42, 0.5, -9),
@@ -690,12 +638,11 @@ function LucidUI:CreateWindow(config)
                 label.TextColor3 = newState and W.Theme.TextPrimary or W.Theme.TextSecondary
             end
 
-            -- ── Click row body: toggle state ───────────
             local clickArea = Create("TextButton", {
                 Text = "",
                 BackgroundTransparency = 1,
                 Position = UDim2.fromOffset(0, 0),
-                Size = UDim2.new(1, -60, 1, 0),  -- leaves the chip + toggle alone
+                Size = UDim2.new(1, -60, 1, 0),
                 ZIndex = 33,
                 Parent = row,
             })
@@ -707,16 +654,12 @@ function LucidUI:CreateWindow(config)
                 PlayUISound("click")
             end, { MoveThreshold = 6 })
 
-            -- ── Long-press row body: open rebind ───────
-            -- Detect long-press by hooking InputBegan and checking duration
             clickArea.InputBegan:Connect(function(input)
                 if input.UserInputType ~= Enum.UserInputType.MouseButton1
                     and input.UserInputType ~= Enum.UserInputType.Touch then return end
 
-                local started = tick()
                 local moved = false
                 local startPos = input.Position
-                local longPressed = false
 
                 local moveConn, endConn
                 moveConn = UserInputService.InputChanged:Connect(function(changed)
@@ -734,12 +677,10 @@ function LucidUI:CreateWindow(config)
                 task.delay(0.45, function()
                     if moved then return end
                     if rebindPopup.Visible then return end
-                    longPressed = true
                     openRebind(fav)
                 end)
             end)
 
-            -- ── Key chip click: direct rebind shortcut ─
             BindTap(chip, function()
                 openRebind(fav)
             end, { MoveThreshold = 6 })
@@ -763,7 +704,6 @@ function LucidUI:CreateWindow(config)
         refreshStarVisual()
     end
 
-    -- ── Star click toggles panel ──────────────────────
     BindTap(starBtn, function()
         if panelOpen then closePanel() else openPanel() end
     end, { MoveThreshold = 8 })
@@ -777,7 +717,6 @@ function LucidUI:CreateWindow(config)
         refreshStarVisual()
     end)
 
-    -- ── Outside click → close panel ───────────────────
     local function isInside(gui, pos)
         if not gui or not gui.Parent then return false end
         local ap = gui.AbsolutePosition
@@ -801,7 +740,6 @@ function LucidUI:CreateWindow(config)
         closePanel()
     end))
 
-    -- ── Escape closes panel ───────────────────────────
     table.insert(W._conns, UserInputService.InputBegan:Connect(function(input)
         if not panelOpen then return end
         if rebindPopup.Visible then return end
@@ -810,7 +748,6 @@ function LucidUI:CreateWindow(config)
         end
     end))
 
-    -- ── Theme integration ────────────────────────────
     W:_registerTheme(function(t)
         starGlow.BackgroundColor3 = t.Accent
         panel.BackgroundColor3   = t.Background
@@ -823,16 +760,12 @@ function LucidUI:CreateWindow(config)
         end
     end)
 
-    -- ── Initial state ─────────────────────────────────
     rebuildPanel()
     refreshStarVisual()
 
     return W
 end
 
--- ============================================================
--- Cleanup
--- ============================================================
 LucidUI:OnCleanup(function()
     for _, conn in ipairs(LucidUI._favoriteConns or {}) do
         pcall(function() conn:Disconnect() end)
