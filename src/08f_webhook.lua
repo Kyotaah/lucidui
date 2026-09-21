@@ -60,6 +60,7 @@
 -- ============================================================
 -- Constants
 -- ============================================================
+do
 local LIMITS = {
     EMBED_TITLE       = 256,
     EMBED_DESCRIPTION = 4096,
@@ -1145,4 +1146,5 @@ LucidUI.Window.BuildSettingsPanel = function(self, ...)
         self._webhookSettingsBuilt = true
         pcall(function() self:_buildWebhookSettings() end)
     end
+end
 end
