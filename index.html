@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Expression Generator</title>
+    <style>
+        body {
+            background-color: #1e1e1e;
+            color: white;
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            margin: 0;
+        }
+        h2 { margin-top: 0; }
+        .canvas-container {
+            width: 400px;
+            height: 400px;
+            background: black;
+            border: 2px solid #333;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+            margin-bottom: 20px;
+        }
+        canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+        .controls {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: center;
+            max-width: 500px;
+        }
+        button, select {
+            padding: 10px 15px;
+            border-radius: 8px;
+            border: none;
+            background-color: #3b3b3b;
+            color: white;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        button:hover, select:hover { background-color: #555; }
+        .download-btn {
+            background-color: #4CAF50;
+            font-weight: bold;
+        }
+        .download-btn:hover { background-color: #45a049; }
+    </style>
+</head>
+<body>
+
+    <h2>Eye Expression Generator</h2>
+    
+    <div class="canvas-container">
+        <!-- The actual canvas is high-res (1024x1024) but displayed smaller via CSS -->
+        <canvas id="faceCanvas" width="1024" height="1024"></canvas>
+    </div>
+
+    <div class="controls">
+        <select id="expressionSelect">
+            <option value="normal">Normal (Original)</option>
+            <option value="happy">Happy (^ ^)</option>
+            <option value="sad">Sad (T T)</option>
+            <option value="angry">Angry (> <)</option>
+            <option value="surprised">Surprised (O O)</option>
+            <option value="wink">Wink</option>
+        </select>
+        <button class="download-btn" onclick="downloadImage()">Download 1x1 HD</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('faceCanvas');
+        const ctx = canvas.getContext('2d');
+        const select = document.getElementById('expressionSelect');
+
+        // High resolution settings
+        const SIZE = 1024;
+        const cx = SIZE / 2; // Center X
+        const cy = SIZE / 2; // Center Y
+        const eyeOffset = 150; // Distance from center
+        const eyeRadius = 100; 
+
+        // Draw function
+        function drawExpression(expression) {
+            // Clear and set background to black
+            ctx.fillStyle = '#000000';
+            ctx.fillRect(0, 0, SIZE, SIZE);
+
+            // Set eye color to white
+            ctx.fillStyle = '#ffffff';
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 30; // For stroked expressions
+            ctx.lineCap = 'round';
+
+            const leftEyeX = cx - eyeOffset;
+            const rightEyeX = cx + eyeOffset;
+            const eyeY = cy;
+
+            switch(expression) {
+                case 'normal':
+                    // Original semi-circles
+                    drawSemiCircle(leftEyeX, eyeY, eyeRadius);
+                    drawSemiCircle(rightEyeX, eyeY, eyeRadius);
+                    break;
+
+                case 'happy':
+                    // Upward arcs
+                    drawArc(leftEyeX, eyeY + 30, eyeRadius, Math.PI, 0);
+                    drawArc(rightEyeX, eyeY + 30, eyeRadius, Math.PI, 0);
+                    break;
+
+                case 'sad':
+                    // Downward arcs (rotated 180) and flat tops
+                    drawArc(leftEyeX, eyeY - 30, eyeRadius, 0, Math.PI);
+                    drawArc(rightEyeX, eyeY - 30, eyeRadius, 0, Math.PI);
+                    break;
+
+                case 'angry':
+                    // Slanted lines/arcs
+                    drawAngryEye(leftEyeX, eyeY, eyeRadius, false);
+                    drawAngryEye(rightEyeX, eyeY, eyeRadius, true);
+                    break;
+
+                case 'surprised':
+                    // Full circles
+                    ctx.beginPath();
+                    ctx.arc(leftEyeX, eyeY, eyeRadius * 0.8, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.beginPath();
+                    ctx.arc(rightEyeX, eyeY, eyeRadius * 0.8, 0, Math.PI * 2);
+                    ctx.fill();
+                    break;
+
+                case 'wink':
+                    // Left eye normal, right eye happy
+                    drawSemiCircle(leftEyeX, eyeY, eyeRadius);
+                    drawArc(rightEyeX, eyeY + 30, eyeRadius, Math.PI, 0);
+                    break;
+            }
+        }
+
+        // Helper: Original eye (flat top, curved bottom)
+        function drawSemiCircle(x, y, r) {
+            ctx.beginPath();
+            ctx.arc(x, y, r, 0, Math.PI, false); // 0 to 180 degrees
+            ctx.closePath();
+            ctx.fill();
+        }
+
+        // Helper: Curved line eye
+        function drawArc(x, y, r, startAngle, endAngle) {
+            ctx.beginPath();
+            ctx.arc(x, y, r, startAngle, endAngle, false);
+            ctx.stroke();
+        }
+
+        // Helper: Angry Eye
+        function drawAngryEye(x, y, r, isRight) {
+            ctx.beginPath();
+            if (!isRight) {
+                ctx.moveTo(x - r, y - 30); // Outer top
+                ctx.lineTo(x + r, y + 40); // Inner bottom
+            } else {
+                ctx.moveTo(x - r, y + 40); // Inner bottom
+                ctx.lineTo(x + r, y - 30); // Outer top
+            }
+            ctx.stroke();
+        }
+
+        // Download function
+        function downloadImage() {
+            // Convert canvas to data URL (PNG format preserves transparency if needed, 
+            // though we filled it with black so it's a solid square)
+            const dataURL = canvas.toDataURL('image/png');
+            
+            // Create a temporary link to trigger download
+            const link = document.createElement('a');
+            link.download = `eyes-${select.value}-1024x1024.png`;
+            link.href = dataURL;
+            link.click();
+        }
+
+        // Event Listeners
+        select.addEventListener('change', (e) => {
+            drawExpression(e.target.value);
+        });
+
+        // Initial draw
+        drawExpression('normal');
+    </script>
+</body>
+</html>
