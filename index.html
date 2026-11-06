@@ -3,199 +3,361 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Expression Generator</title>
+    <title>Lucid Eyes Generator</title>
     <style>
         body {
-            background-color: #1e1e1e;
-            color: white;
-            font-family: Arial, sans-serif;
+            background-color: #121212;
+            color: #e0e0e0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             display: flex;
             flex-direction: column;
             align-items: center;
             padding: 20px;
             margin: 0;
+            min-height: 100vh;
         }
-        h2 { margin-top: 0; }
-        .canvas-container {
-            width: 400px;
-            height: 400px;
-            background: black;
-            border: 2px solid #333;
-            border-radius: 12px;
+        h2 { margin-top: 0; margin-bottom: 20px; }
+        
+        .app-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            max-width: 900px;
+            width: 100%;
+        }
+
+        @media (min-width: 768px) {
+            .app-container {
+                flex-direction: row;
+                align-items: flex-start;
+                justify-content: center;
+            }
+        }
+
+        .canvas-wrapper {
+            width: 350px;
+            height: 350px;
+            border: 1px solid #333;
+            border-radius: 16px;
             overflow: hidden;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
-            margin-bottom: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: #222; /* Slight background to see transparent canvas corners */
         }
+
         canvas {
             width: 100%;
             height: 100%;
             display: block;
         }
+
         .controls {
+            background: #1e1e1e;
+            padding: 20px;
+            border-radius: 12px;
+            width: 100%;
+            max-width: 350px;
+            box-sizing: border-box;
             display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
-            justify-content: center;
-            max-width: 500px;
+            flex-direction: column;
+            gap: 15px;
+            border: 1px solid #333;
         }
-        button, select {
-            padding: 10px 15px;
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .control-group label {
+            font-size: 14px;
+            color: #aaa;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        input[type="range"] {
+            width: 100%;
+            accent-color: #4CAF50;
+        }
+
+        select, input[type="color"] {
+            width: 100%;
+            padding: 8px;
+            border-radius: 6px;
+            border: 1px solid #444;
+            background: #2a2a2a;
+            color: white;
+            cursor: pointer;
+        }
+
+        input[type="color"] {
+            height: 40px;
+            padding: 2px;
+        }
+
+        button.download-btn {
+            padding: 12px;
             border-radius: 8px;
             border: none;
-            background-color: #3b3b3b;
+            background-color: #4CAF50;
             color: white;
             font-size: 16px;
-            cursor: pointer;
-            transition: background 0.2s;
-        }
-        button:hover, select:hover { background-color: #555; }
-        .download-btn {
-            background-color: #4CAF50;
             font-weight: bold;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.1s;
+            margin-top: 10px;
         }
-        .download-btn:hover { background-color: #45a049; }
+
+        button.download-btn:hover { background-color: #45a049; }
+        button.download-btn:active { transform: scale(0.98); }
     </style>
 </head>
 <body>
 
-    <h2>Eye Expression Generator</h2>
+    <h2>Lucid Eyes Customizer</h2>
     
-    <div class="canvas-container">
-        <!-- The actual canvas is high-res (1024x1024) but displayed smaller via CSS -->
-        <canvas id="faceCanvas" width="1024" height="1024"></canvas>
-    </div>
+    <div class="app-container">
+        <div class="canvas-wrapper">
+            <canvas id="faceCanvas" width="1024" height="1024"></canvas>
+        </div>
 
-    <div class="controls">
-        <select id="expressionSelect">
-            <option value="normal">Normal (Original)</option>
-            <option value="happy">Happy (^ ^)</option>
-            <option value="sad">Sad (T T)</option>
-            <option value="angry">Angry (> <)</option>
-            <option value="surprised">Surprised (O O)</option>
-            <option value="wink">Wink</option>
-        </select>
-        <button class="download-btn" onclick="downloadImage()">Download 1x1 HD</button>
+        <div class="controls">
+            <div class="control-group">
+                <label>Expression</label>
+                <select id="expressionSelect">
+                    <option value="normal">Normal (Original)</option>
+                    <option value="happy">Happy (^ ^)</option>
+                    <option value="sad">Sad (T T)</option>
+                    <option value="angry">Angry (> <)</option>
+                    <option value="surprised">Surprised (O O)</option>
+                    <option value="wink">Wink</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label>Eye Size <span id="sizeVal">100</span>px</label>
+                <input type="range" id="eyeSize" min="20" max="200" value="100">
+            </div>
+
+            <div class="control-group">
+                <label>Eye Spacing <span id="spacingVal">300</span>px</label>
+                <input type="range" id="eyeSpacing" min="100" max="600" value="300">
+            </div>
+
+            <div class="control-group">
+                <label>Eye Corner Radius <span id="eyeCrVal">0</span>px</label>
+                <input type="range" id="eyeCr" min="0" max="100" value="0">
+            </div>
+
+            <div class="control-group">
+                <label>Canvas Corner Radius <span id="canvasCrVal">0</span>px</label>
+                <input type="range" id="canvasCr" min="0" max="512" value="0">
+            </div>
+
+            <div class="control-group" style="flex-direction: row; gap: 10px;">
+                <div style="flex: 1;">
+                    <label>Eye Color</label>
+                    <input type="color" id="eyeColor" value="#ffffff">
+                </div>
+                <div style="flex: 1;">
+                    <label>BG Color</label>
+                    <input type="color" id="bgColor" value="#000000">
+                </div>
+            </div>
+
+            <button class="download-btn" onclick="downloadImage()">Download HD (1x1)</button>
+        </div>
     </div>
 
     <script>
         const canvas = document.getElementById('faceCanvas');
         const ctx = canvas.getContext('2d');
-        const select = document.getElementById('expressionSelect');
-
-        // High resolution settings
         const SIZE = 1024;
-        const cx = SIZE / 2; // Center X
-        const cy = SIZE / 2; // Center Y
-        const eyeOffset = 150; // Distance from center
-        const eyeRadius = 100; 
 
-        // Draw function
-        function drawExpression(expression) {
-            // Clear and set background to black
-            ctx.fillStyle = '#000000';
-            ctx.fillRect(0, 0, SIZE, SIZE);
+        // State object to hold all settings
+        const state = {
+            expression: 'normal',
+            eyeSize: 100,
+            spacing: 300,
+            eyeCr: 0,
+            canvasCr: 0,
+            eyeColor: '#ffffff',
+            bgColor: '#000000'
+        };
 
-            // Set eye color to white
-            ctx.fillStyle = '#ffffff';
-            ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = 30; // For stroked expressions
-            ctx.lineCap = 'round';
+        // DOM Elements
+        const el = {
+            expression: document.getElementById('expressionSelect'),
+            eyeSize: document.getElementById('eyeSize'),
+            spacing: document.getElementById('eyeSpacing'),
+            eyeCr: document.getElementById('eyeCr'),
+            canvasCr: document.getElementById('canvasCr'),
+            eyeColor: document.getElementById('eyeColor'),
+            bgColor: document.getElementById('bgColor'),
+            sizeVal: document.getElementById('sizeVal'),
+            spacingVal: document.getElementById('spacingVal'),
+            eyeCrVal: document.getElementById('eyeCrVal'),
+            canvasCrVal: document.getElementById('canvasCrVal')
+        };
 
-            const leftEyeX = cx - eyeOffset;
-            const rightEyeX = cx + eyeOffset;
+        function updateState() {
+            state.expression = el.expression.value;
+            state.eyeSize = parseInt(el.eyeSize.value);
+            state.spacing = parseInt(el.spacing.value);
+            state.eyeCr = parseInt(el.eyeCr.value);
+            state.canvasCr = parseInt(el.canvasCr.value);
+            state.eyeColor = el.eyeColor.value;
+            state.bgColor = el.bgColor.value;
+
+            // Update labels
+            el.sizeVal.textContent = state.eyeSize;
+            el.spacingVal.textContent = state.spacing;
+            el.eyeCrVal.textContent = state.eyeCr;
+            el.canvasCrVal.textContent = state.canvasCr;
+
+            draw();
+        }
+
+        function draw() {
+            // Clear canvas (transparent)
+            ctx.clearRect(0, 0, SIZE, SIZE);
+
+            // 1. Draw Background with Canvas Corner Radius
+            ctx.fillStyle = state.bgColor;
+            ctx.beginPath();
+            if (ctx.roundRect) {
+                ctx.roundRect(0, 0, SIZE, SIZE, state.canvasCr);
+            } else {
+                // Fallback for older browsers
+                const cr = state.canvasCr;
+                ctx.moveTo(cr, 0);
+                ctx.lineTo(SIZE - cr, 0);
+                ctx.quadraticCurveTo(SIZE, 0, SIZE, cr);
+                ctx.lineTo(SIZE, SIZE - cr);
+                ctx.quadraticCurveTo(SIZE, SIZE, SIZE - cr, SIZE);
+                ctx.lineTo(cr, SIZE);
+                ctx.quadraticCurveTo(0, SIZE, 0, SIZE - cr);
+                ctx.lineTo(0, cr);
+                ctx.quadraticCurveTo(0, 0, cr, 0);
+            }
+            ctx.fill();
+
+            // 2. Setup for Eyes
+            const cx = SIZE / 2;
+            const cy = SIZE / 2;
+            const leftEyeX = cx - state.spacing / 2;
+            const rightEyeX = cx + state.spacing / 2;
             const eyeY = cy;
+            const r = state.eyeSize;
+            // Cap corner radius so it doesn't break the geometry
+            const cr = Math.min(state.eyeCr, r); 
 
-            switch(expression) {
+            ctx.fillStyle = state.eyeColor;
+            ctx.strokeStyle = state.eyeColor;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+
+            // 3. Draw specific expression
+            switch(state.expression) {
                 case 'normal':
-                    // Original semi-circles
-                    drawSemiCircle(leftEyeX, eyeY, eyeRadius);
-                    drawSemiCircle(rightEyeX, eyeY, eyeRadius);
+                    drawRoundedSemiCircle(leftEyeX, eyeY, r, cr);
+                    drawRoundedSemiCircle(rightEyeX, eyeY, r, cr);
                     break;
-
                 case 'happy':
-                    // Upward arcs
-                    drawArc(leftEyeX, eyeY + 30, eyeRadius, Math.PI, 0);
-                    drawArc(rightEyeX, eyeY + 30, eyeRadius, Math.PI, 0);
+                    ctx.lineWidth = Math.max(cr * 1.5, 10); // Use CR to adjust stroke thickness
+                    drawArc(leftEyeX, eyeY + r/3, r, Math.PI, 0);
+                    drawArc(rightEyeX, eyeY + r/3, r, Math.PI, 0);
                     break;
-
                 case 'sad':
-                    // Downward arcs (rotated 180) and flat tops
-                    drawArc(leftEyeX, eyeY - 30, eyeRadius, 0, Math.PI);
-                    drawArc(rightEyeX, eyeY - 30, eyeRadius, 0, Math.PI);
+                    ctx.lineWidth = Math.max(cr * 1.5, 10);
+                    drawArc(leftEyeX, eyeY - r/3, r, 0, Math.PI);
+                    drawArc(rightEyeX, eyeY - r/3, r, 0, Math.PI);
                     break;
-
                 case 'angry':
-                    // Slanted lines/arcs
-                    drawAngryEye(leftEyeX, eyeY, eyeRadius, false);
-                    drawAngryEye(rightEyeX, eyeY, eyeRadius, true);
+                    ctx.lineWidth = Math.max(cr * 1.5, 10);
+                    drawAngryEye(leftEyeX, eyeY, r, false);
+                    drawAngryEye(rightEyeX, eyeY, r, true);
                     break;
-
                 case 'surprised':
-                    // Full circles
                     ctx.beginPath();
-                    ctx.arc(leftEyeX, eyeY, eyeRadius * 0.8, 0, Math.PI * 2);
+                    ctx.arc(leftEyeX, eyeY, r * 0.8, 0, Math.PI * 2);
                     ctx.fill();
                     ctx.beginPath();
-                    ctx.arc(rightEyeX, eyeY, eyeRadius * 0.8, 0, Math.PI * 2);
+                    ctx.arc(rightEyeX, eyeY, r * 0.8, 0, Math.PI * 2);
                     ctx.fill();
                     break;
-
                 case 'wink':
-                    // Left eye normal, right eye happy
-                    drawSemiCircle(leftEyeX, eyeY, eyeRadius);
-                    drawArc(rightEyeX, eyeY + 30, eyeRadius, Math.PI, 0);
+                    drawRoundedSemiCircle(leftEyeX, eyeY, r, cr);
+                    ctx.lineWidth = Math.max(cr * 1.5, 10);
+                    drawArc(rightEyeX, eyeY + r/3, r, Math.PI, 0);
                     break;
             }
         }
 
-        // Helper: Original eye (flat top, curved bottom)
-        function drawSemiCircle(x, y, r) {
+        // --- Drawing Helpers ---
+
+        function drawRoundedSemiCircle(x, y, r, cr) {
             ctx.beginPath();
-            ctx.arc(x, y, r, 0, Math.PI, false); // 0 to 180 degrees
+            if (cr > 0) {
+                // Top-left start
+                ctx.moveTo(x - r + cr, y);
+                // Top edge
+                ctx.lineTo(x + r - cr, y);
+                // Top-right corner
+                ctx.quadraticCurveTo(x + r, y, x + r, y + cr);
+                // Bottom main curve
+                ctx.arc(x, y, r, 0, Math.PI, false);
+                // Top-left corner
+                ctx.quadraticCurveTo(x - r, y, x - r + cr, y);
+            } else {
+                // Standard semi-circle
+                ctx.arc(x, y, r, 0, Math.PI, false);
+            }
             ctx.closePath();
             ctx.fill();
         }
 
-        // Helper: Curved line eye
         function drawArc(x, y, r, startAngle, endAngle) {
             ctx.beginPath();
             ctx.arc(x, y, r, startAngle, endAngle, false);
             ctx.stroke();
         }
 
-        // Helper: Angry Eye
         function drawAngryEye(x, y, r, isRight) {
             ctx.beginPath();
+            // Scaling the slant based on radius
             if (!isRight) {
-                ctx.moveTo(x - r, y - 30); // Outer top
-                ctx.lineTo(x + r, y + 40); // Inner bottom
+                ctx.moveTo(x - r, y - r/2);
+                ctx.lineTo(x + r, y + r/2);
             } else {
-                ctx.moveTo(x - r, y + 40); // Inner bottom
-                ctx.lineTo(x + r, y - 30); // Outer top
+                ctx.moveTo(x - r, y + r/2);
+                ctx.lineTo(x + r, y - r/2);
             }
             ctx.stroke();
         }
 
-        // Download function
         function downloadImage() {
-            // Convert canvas to data URL (PNG format preserves transparency if needed, 
-            // though we filled it with black so it's a solid square)
             const dataURL = canvas.toDataURL('image/png');
-            
-            // Create a temporary link to trigger download
             const link = document.createElement('a');
-            link.download = `eyes-${select.value}-1024x1024.png`;
+            link.download = `lucid-eyes-${state.expression}-${SIZE}x${SIZE}.png`;
             link.href = dataURL;
             link.click();
         }
 
-        // Event Listeners
-        select.addEventListener('change', (e) => {
-            drawExpression(e.target.value);
+        // Attach Event Listeners to all inputs for real-time updates
+        Object.values(el).forEach(element => {
+            if (element.tagName === 'INPUT' || element.tagName === 'SELECT') {
+                element.addEventListener('input', updateState);
+            }
         });
 
         // Initial draw
-        drawExpression('normal');
+        updateState();
     </script>
 </body>
 </html>
